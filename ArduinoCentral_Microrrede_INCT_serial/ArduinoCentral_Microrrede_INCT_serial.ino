@@ -8,9 +8,9 @@
 //Blibliotecas
 //#include <FastLED.h>
 #include <Wire.h>
-#include "ArduinoGraphics.h"
+//#include "ArduinoGraphics.h"
 #include "Arduino_LED_Matrix.h"
-#include "LEDs_R4_Matriz.h"
+//#include "LEDs_R4_Matriz.h"
 #include "funcoes.h"
 #include "comunicacao_serial.h"
 #include "referencias.h"
@@ -61,16 +61,18 @@ unsigned long tempo_ultimo_controle_mpc;
 float dt;
 int k = 0; //iteração
 
-float SoC = 0; //State of Charge da bateria [%] -- Condição inicial
+float SoC = 1; //State of Charge da bateria [%] -- Condição inicial
 
 //Parâmetros escolhidos de uma bateria 48V, 100Ah
 const int E_nom = 4800; //Energia nominal [Wh] 
-const float nc = 0.95; // eficiência de carga
-const float nd = 0.95; // eficiência de descarga
+//const float nc = 0.95; // eficiência de carga
+//const float nd = 0.95; // eficiência de descarga
 // const float a = nc*(Ts/3600*5000)/E_nom; //[1/W]
 // const float b = (1/nd)*(Ts/3600*5000)/(E_nom); //[1/W]
-const float a = nc*(Ts)*0.0005; //[1/W]
-const float b = (1/nd)*(Ts)*0.0005; //[1/W]
+//const float a = nc*(Ts)*0.0005; //[1/W]
+const float a = 3.92*pow(10,-5); //[1/W]
+//const float b = (1/nd)*(Ts)*0.0005; //[1/W]
+const float b = 4.08*pow(10,-5); //[1/W]
 const float omega = 0.995; //perda 
 
 int num_leds_on;
