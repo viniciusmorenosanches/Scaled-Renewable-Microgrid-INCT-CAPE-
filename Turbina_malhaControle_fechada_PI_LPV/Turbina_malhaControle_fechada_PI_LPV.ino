@@ -16,7 +16,7 @@ Servo ESC;
  
 //Pinos arduino
 int PinEsc = 9;
-int PinTurbina = A0;
+int PinTurbina = A3;
 
 bool start = false;
 
