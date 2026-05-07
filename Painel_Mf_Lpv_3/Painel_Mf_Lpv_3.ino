@@ -69,6 +69,7 @@ void receberDados() {
 void enviarDados() {
   byte buffer[4];
   memcpy(buffer, &Pot_pv, sizeof(float));
+  Serial.println(Pot_pv);
   Wire.write(buffer, 4);  // envia os 4 bytes de uma vez
 }
 
@@ -179,6 +180,3 @@ void loop() {
 
     }
   }
-
-
-

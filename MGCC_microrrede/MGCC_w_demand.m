@@ -7,10 +7,10 @@ microgrid_init_w_demand
 
 data = load("dados_cenario_24h_reformulado.mat");
 
-if ~isempty(instrfind)
-     fclose(instrfind);
-     delete(instrfind);
-end
+% if ~isempty(instrfind)
+%      fclose(instrfind);
+%      delete(instrfind);
+% end
 
 k1 = 3.92e-5 * 400;
 k2 = 4.08e-5 * 400;
@@ -38,7 +38,7 @@ uel = 0;
 ucc = 0;
 
 % --- 1. Configuração da Comunicação Serial ---
-port = "COM6"; % !!! MUDE AQUI para a sua porta COM !!!
+port = "COM9"; % !!! MUDE AQUI para a sua porta COM !!!
 baudRate = 9600;
 s = serialport(port, baudRate);
 configureTerminator(s, "LF"); % Define o terminador de linha

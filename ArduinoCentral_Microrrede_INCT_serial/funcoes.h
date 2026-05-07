@@ -56,7 +56,6 @@ float lerDoI2C(int endereco) {
   for (int i = 0; i < 4 && Wire.available(); i++) {
     buffer[i] = Wire.read();
   }
-
   memcpy(&valorRecebido, buffer, sizeof(float)); // copia bytes para o float
   return valorRecebido;
 }
@@ -114,7 +113,3 @@ bool receberMatlab(HardwareSerial &port, char* destBuffer, int bufferSize) {
   
   return false; // Nenhum pacote completo foi encontrado nesta chamada do loop
 }
-
-
-
-

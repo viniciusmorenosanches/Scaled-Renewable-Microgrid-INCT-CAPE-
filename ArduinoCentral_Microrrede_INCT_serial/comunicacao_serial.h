@@ -3,7 +3,7 @@
 
 #include <SerialTransfer.h>
 #include "pacotes_serial.h" // Importante: deve ser incluído para sabermos das structs e traits
-#include <initializer_list>
+//#include <initializer_list>
 #include <HardwareSerial.h>
 
 /* =========================================================================

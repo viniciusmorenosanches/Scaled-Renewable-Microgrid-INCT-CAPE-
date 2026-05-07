@@ -93,6 +93,7 @@ void setup() {
   Matlab.begin(9600);
   Arduino_el.begin(9600);
   R4Transfer.begin(Arduino_el);
+  Serial.begin(9600);
 
   //FastLED.addLeds<WS2812, LED_PIN, GRB>(leds, NUM_LEDS);
 

@@ -9,13 +9,13 @@
 //#include <FastLED.h>
 #include <Wire.h>
 //#include "ArduinoGraphics.h"
-#include "Arduino_LED_Matrix.h"
+//#include "Arduino_LED_Matrix.h"
 //#include "LEDs_R4_Matriz.h"
 #include "funcoes.h"
 #include "comunicacao_serial.h"
 #include "referencias.h"
 #include <avr/pgmspace.h> //alocar espaço memória FLASH
-#include <initializer_list>
+//#include <initializer_list>
 #include <SerialTransfer.h>   // Biblioteca para comunicação Serial entre arduinos
 
 #define Arduino_el Serial1
@@ -95,6 +95,7 @@ void setup() {
   Matlab.begin(9600);
   Arduino_el.begin(9600);
   R4Transfer.begin(Arduino_el);
+  Serial.begin(9600);
 
   //FastLED.addLeds<WS2812, LED_PIN, GRB>(leds, NUM_LEDS);
 
@@ -126,6 +127,7 @@ void loop() {
     //Manda valores para MPC
     if (millis() - tempo_ultimo_controle_mpc >= Ts*1000) {
       tempo_ultimo_controle_mpc = millis();
+      Serial.println(Pot_pv);
       enviarMatlab(Matlab, { Level_H2, Pot_cc, Pot_total, SoC, Pot_wt, Pot_pv, Pc, Pd});
     }
 
