@@ -59,6 +59,7 @@ int k = 0;
 
 //Funcao que atualiza valor da referência
 void receberDados() {
+  Serial.println("Recebido");
   byte buffer[4];
   for (int i=0; i<4 && Wire.available(); i++) {
     buffer[i] = Wire.read();
@@ -67,9 +68,9 @@ void receberDados() {
 }
 
 void enviarDados() {
+  Serial.println(Pot_pv);
   byte buffer[4];
   memcpy(buffer, &Pot_pv, sizeof(float));
-  Serial.println(Pot_pv);
   Wire.write(buffer, 4);  // envia os 4 bytes de uma vez
 }
 
@@ -160,7 +161,7 @@ void loop() {
     // PWM de saída (opcional)
     analogWrite(ledPin, (int)(U / 5.0 * 255));
 
-    Pot_pv = 100+k/100;
+    Pot_pv = 100*tensaoFiltrada;
 
     //Print para análise
     Serial.print(Uc[0][0]);

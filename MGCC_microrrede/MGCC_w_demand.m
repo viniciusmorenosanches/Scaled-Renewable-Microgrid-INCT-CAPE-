@@ -104,7 +104,16 @@ Pot_descarga = 0;
 while ishandle(fig) % Continua enquanto a figura estiver aberta
     try
         i = i + 1;
-        data_str = readline(s);
+        
+        % --- FIX DO BUFFER: LER ATÉ O DADO MAIS RECENTE ---
+        data_str = readline(s); % Lê uma linha
+        % Se ainda tiver dados velhos na fila, continua lendo e descartando
+        % até chegar na linha mais fresca em tempo real.
+        while s.NumBytesAvailable > 0
+            data_str = readline(s);
+        end
+        % --------------------------------------------------
+        
         valores = split(data_str, ',');  % cell array de strings
         valores_num = str2double(valores);  % array de doubles
 
@@ -125,8 +134,9 @@ while ishandle(fig) % Continua enquanto a figura estiver aberta
         end
         
         %SoC(i + 1) = 0.995*SoC(i) + k1/400*Pot_carga - k2/400*Pot_descarga;
-        Pot_wt(i)    = valores_num(5)*50;
-        Pot_pv(i)    = valores_num(6)*1.5;
+        Pot_wt(i)    = valores_num(5);%*50;
+        Pot_pv(i)    = valores_num(6);%*1.5;
+
 
         %demand(i) = 0.8*Pot_wt(end) + 0.8*Pot_pv(end);
         % if i > 500 && i <= 1000
@@ -141,7 +151,9 @@ while ishandle(fig) % Continua enquanto a figura estiver aberta
 
         demand(i) = data.demanda(i);
 
-        disp(valores_num);
+      fprintf('Iteração: %d | Pot_pv: %.2f W | Pot_wt: %.2f W | SoC: %.2f | Nível H2: %.2f\n', ...
+                 i, Pot_pv(i), Pot_wt(i), SoC(i), nivelAgua(i));
+        % -------------------------------
         
 
         Pot_total(i) = Pot_wt(i) + Pot_pv(i) + Pot_cc(i) - Pot_el(i) - Pot_carga + Pot_descarga;
@@ -237,8 +249,8 @@ while ishandle(fig) % Continua enquanto a figura estiver aberta
         if isnan(u_prev)
             disp("Solution is NaN!")
         else
-            Pot_carga = u_prev(1) * 400
-            Pot_descarga = u_prev(2) * 400
+            Pot_carga = u_prev(1) * 400;
+            Pot_descarga = u_prev(2) * 400;
 
             dat_pot_carga(i) = Pot_carga;
             dat_pot_descarga(i) = Pot_descarga;
@@ -254,11 +266,11 @@ while ishandle(fig) % Continua enquanto a figura estiver aberta
             else
                 ucc = 0;
             end
-            uel
+          %  uel
             %u_prev(3)
-            ucc
+         %   ucc
             %u_prev(4)
-            disp("Solution is good!!!")
+          %  disp("Solution is good!!!")
         end
         
         

@@ -47,17 +47,20 @@ float arredondaPraBaixo(float x) {
   return (int)floor(x/(NUM_FILEIRAS/NUM_LEDS));
 }
 
-
 float lerDoI2C(int endereco) {
-  byte buffer[4];
-  float valorRecebido = 0;
+  byte buffer[4] = {0, 0, 0, 0}; // FIX: Initialize buffer with zeros
+  float valorRecebido = 0.0;
 
-  Wire.requestFrom(endereco, 4); // pede 4 bytes
-  for (int i = 0; i < 4 && Wire.available(); i++) {
-    buffer[i] = Wire.read();
+  int bytesRecebidos = Wire.requestFrom(endereco, 4); // pede 4 bytes
+  
+  if (bytesRecebidos == 4) { // FIX: Only process if slave actually responded
+    for (int i = 0; i < 4; i++) {
+      buffer[i] = Wire.read();
+    }
+    memcpy(&valorRecebido, buffer, sizeof(float)); 
   }
-  memcpy(&valorRecebido, buffer, sizeof(float)); // copia bytes para o float
-  return valorRecebido;
+  
+  return valorRecebido; // If it fails, it will safely return 0.0 instead of 10.61
 }
 
 

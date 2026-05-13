@@ -8,9 +8,9 @@
 //Blibliotecas
 //#include <FastLED.h>
 #include <Wire.h>
-#include "ArduinoGraphics.h"
+//#include "ArduinoGraphics.h"
 #include "Arduino_LED_Matrix.h"
-#include "LEDs_R4_Matriz.h"
+//#include "LEDs_R4_Matriz.h"
 #include "funcoes.h"
 #include "comunicacao_serial.h"
 #include "referencias.h"
@@ -61,16 +61,18 @@ unsigned long tempo_ultimo_controle_mpc;
 float dt;
 int k = 0; //iteração
 
-float SoC = 0; //State of Charge da bateria [%] -- Condição inicial
+float SoC = 1; //State of Charge da bateria [%] -- Condição inicial
 
 //Parâmetros escolhidos de uma bateria 48V, 100Ah
 const int E_nom = 4800; //Energia nominal [Wh] 
-const float nc = 0.95; // eficiência de carga
-const float nd = 0.95; // eficiência de descarga
+//const float nc = 0.95; // eficiência de carga
+//const float nd = 0.95; // eficiência de descarga
 // const float a = nc*(Ts/3600*5000)/E_nom; //[1/W]
 // const float b = (1/nd)*(Ts/3600*5000)/(E_nom); //[1/W]
-const float a = nc*(Ts)*0.0005; //[1/W]
-const float b = (1/nd)*(Ts)*0.0005; //[1/W]
+//const float a = nc*(Ts)*0.0005; //[1/W]
+const float a = 3.92*pow(10,-5); //[1/W]
+//const float b = (1/nd)*(Ts)*0.0005; //[1/W]
+const float b = 4.08*pow(10,-5); //[1/W]
 const float omega = 0.995; //perda 
 
 int num_leds_on;
@@ -94,7 +96,6 @@ void setup() {
   Arduino_el.begin(9600);
   R4Transfer.begin(Arduino_el);
   Serial.begin(9600);
-
   //FastLED.addLeds<WS2812, LED_PIN, GRB>(leds, NUM_LEDS);
 
   //setupMatrizLeds(matrix);
@@ -113,12 +114,11 @@ void loop() {
     enviarI2C(Arduino_pv, ref_Sol(k));
     // Lê pot do Arduino_pv
     Pot_pv = lerDoI2C(Arduino_pv);
-
+    
     // Envia ref vento para Arduino_wt
     enviarI2C(Arduino_wt, ref_Vento(k));
     // Lê pot do Arduino_wt
     Pot_wt = lerDoI2C(Arduino_wt);
-
     //Calcula Pot total
     Pot_total = Pot_pv + Pot_cc + Pot_wt - Pc + Pd;
 
@@ -142,6 +142,12 @@ void loop() {
     DadosEnviar.uel = uel;
     enviarArduino_el(R4Transfer, DadosEnviar);
 
+    // DEBUG: O que estou enviando para o Uno?
+    Serial.print("ENVIANDO -> ucc: "); 
+    Serial.print(DadosEnviar.ucc);
+    Serial.print(" | uel: "); 
+    Serial.println(DadosEnviar.uel);
+
     // Atualiza SOC da bateria
     atualiza_SoC(SoC, omega, a, b, Pc, Pd, Ts);
     num_leds_on = arredondaPraBaixo(SoC);
@@ -160,6 +166,14 @@ void loop() {
 
       Pot_cc   = DadosRecebidos.Pot_cc;
       Level_H2 = DadosRecebidos.Level_H2;
+
+            // DEBUG: O que acabei de receber do Uno?
+      Serial.print("RECEBIDO <- Pot_cc: "); 
+      Serial.print(Pot_cc);
+      Serial.print(" | Level_H2: "); 
+      Serial.println(Level_H2);
+      Serial.println("-----------------------------------");
+      
       
     } 
 

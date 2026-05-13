@@ -7,9 +7,12 @@
 
 // Definições de pinos e ângulos
 #define PINO_RELE 4
-#define PINO_SERVO 9
+#define PINO_SERVO 5
 #define ANGULO_FECHADO 180
 #define ANGULO_ABERTO 0
+
+const int voltagePin = A0;    
+const float resistance = 11.7;
 
 Servo meuServo;
 //SoftwareSerial SerialMestre(10, 11); // SoftwareSerial é usado para 
@@ -61,7 +64,7 @@ void setup() {
   pinMode(PINO_RELE, OUTPUT);
   digitalWrite(PINO_RELE, HIGH);
   meuServo.attach(PINO_SERVO);
-  //meuServo.write(ANGULO_FECHADO);
+  meuServo.write(ANGULO_FECHADO);
 
   // Inicializa o sensor chamando a função do nosso arquivo .h
   setupSensor(); 
@@ -116,9 +119,18 @@ void loop() {
   if (millis() - tempo_ultimo_controle >= Ts*1000) {
     tempo_ultimo_controle = millis();
 
-    // 1. Lê o nível da água usando nossa função organizada
+    // 1. Lê o nível da água
     Level_H2 = readWaterLevel();
-    Pot_cc = 154.57;
+
+    // 2. Lê e calcula a potência da Célula (Pot_cc)
+    int analogValue = analogRead(voltagePin);
+    float voltage = analogValue * (5.0 / 1023.0);
+    float current = voltage / resistance;
+    
+    // Potência em Watts (Ajuste se o sistema Central esperar miliWatts)
+    Pot_cc = voltage * current; 
+
+    // 3. Atua nos relés e servos com base no que o Mestre mandou
     controle(ucc, uel);
 
   }

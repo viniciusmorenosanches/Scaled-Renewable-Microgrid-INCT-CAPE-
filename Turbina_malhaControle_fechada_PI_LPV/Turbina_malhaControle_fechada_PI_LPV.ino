@@ -18,7 +18,7 @@ Servo ESC;
 int PinEsc = 9;
 int PinTurbina = A3;
 
-bool start = false;
+volatile bool start = false; // MUST be volatile
 
 volatile float Y_ref = 0; // referencia atual global
 volatile float Pot_wt = 0; // global
@@ -93,7 +93,7 @@ const int numReadings = tsim/Ts; //numero de leituras
 
 
 //Funcao que atualiza valor da referência
-void receberDados() {
+void receberDados(int howMany) {
   start = true; // libera execução do setup()
   byte buffer[4];
   for (int i=0; i<4 && Wire.available(); i++) {
@@ -104,41 +104,42 @@ void receberDados() {
 }
 
 void enviarDados() {
+  Pot_wt = 0.5 * 1.225 * PI *pow(0.15, 2) * pow(Y_filtrado[1], 3)  * 0.35;
   byte buffer[4];
-  memcpy(buffer, &Pot_wt, sizeof(float));
+  memcpy(buffer, &Pot_wt, sizeof(float)); 
   Wire.write(buffer, 4);  // envia os 4 bytes de uma vez
+  Serial.print("Pot_wt1");
+  Serial.println(Pot_wt);
 }
 
 
 void setup() {
-  Wire.begin(ENDERECO); // escravo com endereço 8
+  Wire.begin(ENDERECO); // escravo com endereço 10
   Wire.onRequest(enviarDados);
   Wire.onReceive(receberDados);
 
   Serial.begin(115200);
   while(!Serial); //Espera serial iniciar
-    //////// inicialização do ESC////////////////
-  while  (currentMillis-previousMillis<10000){
-    currentMillis = millis();
-    ESC.write(0);}
 
-    // Espera o mestre mandar start
-  while (!start) {
-    // fica travado aqui até receber o comando
-    Serial.println("Esperando mestre iniciar...");
+  // 1. ATTACH THE ESC FIRST
+  ESC.attach(PinEsc, 1000, 2000); 
+
+  // 2. NOW ARM THE ESC FOR 10 SECONDS
+  previousMillis = millis();
+  while  (millis() - previousMillis < 10000){
+    ESC.write(0);
   }
 
-  ESC.attach(PinEsc, 1000, 2000); // (pin, min pulse width, max pulse width in microseconds) para o esc
+  // 3. WAIT FOR MASTER
+  while (!start) {
+    Serial.println("Esperando mestre iniciar...");
+    delay(200); // <-- ADD DELAY so it doesn't crash the Serial buffer
+  }
+
   pinMode(PinTurbina, INPUT); //leitura de tensão gerada pela turbina eólica
   
-
   Serial.println("U, Y, Yfiltrado, ref, E, Uc"); //legenda Plotter Serial
 
-  previousMillis = millis();
-  currentMillis = millis();
-
-
-    
   previousMillis = millis();
 }
 
@@ -204,9 +205,6 @@ void loop() {
     // }
 ////////////////////////////////////////////////////////
 
-    Pot_wt = 0.5 * 1.225 * PI *pow(0.15, 2) * pow(Y_filtrado[1], 3)  * 0.35;
-    // Serial.println(Pot_wt);
-    // Serial.println(Y_filtrado[1]);
 
     //CALCULO DO ERRO E INTEGRAL DO ERRO
 

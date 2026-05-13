@@ -23,7 +23,7 @@ static float getTrimmedAverage() {
         // Em caso de erro de leitura, use um valor inválido (ex: 255) ou o anterior
         readings[i] = 255; 
     }
-    delay(0);
+    delay(2);
   }
 
   // Ordena as leituras (Bubble Sort)
