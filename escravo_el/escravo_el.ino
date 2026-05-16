@@ -57,7 +57,7 @@ void setup() {
   
   Wire.begin();
   //Serial.begin(115200);
-  SerialMestre.begin(9600);
+  SerialMestre.begin(115200);
   Mestre.begin(SerialMestre);
 
   // Configuração dos atuadores

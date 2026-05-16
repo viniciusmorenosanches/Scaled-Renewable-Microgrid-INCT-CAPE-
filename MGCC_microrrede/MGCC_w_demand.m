@@ -7,6 +7,16 @@ microgrid_init_w_demand
 
 data = load("dados_cenario_24h_reformulado.mat");
 
+% --- Carregando as referências climáticas externas ---
+disp("Carregando perfis climáticos (CSV)...");
+try
+    array_ref_sol = readmatrix('referenciaSol.csv');
+    array_ref_vento = readmatrix('referenciaVento.csv');
+catch
+    disp("Erro: Arquivos CSV não encontrados! Certifique-se de que estão na mesma pasta.");
+    return;
+end
+
 % if ~isempty(instrfind)
 %      fclose(instrfind);
 %      delete(instrfind);
@@ -101,19 +111,43 @@ ucc = 0;
 Pot_carga = 0;
 Pot_descarga = 0;
 
+demand(1) = 0;
+
+
 while ishandle(fig) % Continua enquanto a figura estiver aberta
     try
         i = i + 1;
         
-        % --- FIX DO BUFFER: LER ATÉ O DADO MAIS RECENTE ---
-        data_str = readline(s); % Lê uma linha
-        % Se ainda tiver dados velhos na fila, continua lendo e descartando
-        % até chegar na linha mais fresca em tempo real.
-        while s.NumBytesAvailable > 0
-            data_str = readline(s);
-        end
         % --------------------------------------------------
+        % 1. MATLAB MANDA AS ORDENS E REFERÊNCIAS PRIMEIRO
+        % --------------------------------------------------
+
+        % Lê a referência de Sol do array. Se a simulação passar do 
+        % tamanho do CSV, mantém o último valor ou zera.
+        if i <= length(array_ref_sol)
+            ref_sol_volts = array_ref_sol(i);
+        else
+            ref_sol_volts = 0; % Desliga se o cenário acabar
+        end
+
+        % Lê a referência de Vento do array
+        if i <= length(array_ref_vento)
+            ref_vento_volts = array_ref_vento(i);
+        else
+            ref_vento_volts = 0; 
+        end
+
+        % Monta o pacote com as 6 variáveis para enviar ao Arduino
+        linha_envio = sprintf('%.2f,%.2f,%d,%d,%.2f,%.2f', Pot_carga, Pot_descarga, ucc, uel, ref_sol_volts, ref_vento_volts);
+        writeline(s, linha_envio);
         
+        % --------------------------------------------------
+        % 2. MATLAB LÊ A RESPOSTA (O Arduino responde imediatamente)
+        % -------------------------------------------------- 
+        data_str = readline(s);
+
+        disp("RAW DATA DO R4: " + data_str);
+
         valores = split(data_str, ',');  % cell array de strings
         valores_num = str2double(valores);  % array de doubles
 
@@ -158,13 +192,13 @@ while ishandle(fig) % Continua enquanto a figura estiver aberta
 
         Pot_total(i) = Pot_wt(i) + Pot_pv(i) + Pot_cc(i) - Pot_el(i) - Pot_carga + Pot_descarga;
 
-        % --- Envio a cada 1 segundo ---
-        t_now = seconds(datetime('now') - startTime);
-        if t_now - lastSendTime >= 1
-            lastSendTime = t_now;
-            linha = sprintf('%.1f,%.1f,%.1f,%.1f', Pot_carga, Pot_descarga, ucc, uel);
-            writeline(s, linha);
-        end
+        % % --- Envio a cada 1 segundo ---
+        % t_now = seconds(datetime('now') - startTime);
+        % if t_now - lastSendTime >= 1
+        %     lastSendTime = t_now;
+        %     linha = sprintf('%.1f,%.1f,%.1f,%.1f', Pot_carga, Pot_descarga, ucc, uel);
+        %     writeline(s, linha);
+        % end
 
         % Atualiza gráficos
         t = seconds(datetime('now') - startTime);

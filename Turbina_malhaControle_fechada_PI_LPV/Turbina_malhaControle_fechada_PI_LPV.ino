@@ -22,6 +22,7 @@ volatile bool start = false; // MUST be volatile
 
 volatile float Y_ref = 0; // referencia atual global
 volatile float Pot_wt = 0; // global
+
 float u_init[60] = {0,0,0,0,0,0,0,0,0,0,2,4,6,9,12,14,17,20,23,26,30,34,37,41,43,46,49,52,55,57,60,62,64,65,66,67,67,68,68,68,68,68,68,68,68,68,68,68,68,68,68,68,68,68,68,68,68,68};
 //FILTROS
 float a = 0.8; // parametro filtro de ruido da saída LPF
@@ -100,18 +101,15 @@ void receberDados(int howMany) {
     buffer[i] = Wire.read();
   }
   memcpy(&Y_ref, buffer, sizeof(float));
-  if (Y_ref < 2.0){Y_ref = Y_ref + 2.0;}
+  if (Y_ref > 0.0 && Y_ref < 2.0){Y_ref = Y_ref + 2.0;}
 }
+
 
 void enviarDados() {
-  Pot_wt = 0.5 * 1.225 * PI *pow(0.15, 2) * pow(Y_filtrado[1], 3)  * 0.35;
   byte buffer[4];
-  memcpy(buffer, &Pot_wt, sizeof(float)); 
-  Wire.write(buffer, 4);  // envia os 4 bytes de uma vez
-  Serial.print("Pot_wt1");
-  Serial.println(Pot_wt);
+  memcpy(buffer, (void*)&Pot_wt, sizeof(float)); 
+  Wire.write(buffer, 4);  
 }
-
 
 void setup() {
   Wire.begin(ENDERECO); // escravo com endereço 10
@@ -126,8 +124,10 @@ void setup() {
 
   // 2. NOW ARM THE ESC FOR 10 SECONDS
   previousMillis = millis();
-  while  (millis() - previousMillis < 10000){
+   unsigned long inicio = millis();
+  while (millis() - inicio < 10000) {
     ESC.write(0);
+    delay(10); // Dá tempo para I²C processar
   }
 
   // 3. WAIT FOR MASTER
@@ -199,6 +199,31 @@ void loop() {
      if (x_est<0){x_est=0;}
      Y_filtrado[1] = x_est;
 
+//// --- CÁLCULO AERODINÂMICO DA POTÊNCIA ---
+//     // Usa a tensão filtrada como se fosse a velocidade do vento
+//  Pot_wt = 0.5 * 1.225 * PI *pow(0.15, 2) * pow(Y_filtrado[1], 3)  * 0.35;
+
+  // --- CÁLCULO DA POTÊNCIA OTIMIZADO ---
+     // 1. Constante calculada diretamente para poupar o processador (dá ~0.01515)
+     float constante_aero = 0.5 * 1.225 * PI * (0.15 * 0.15) * 0.35;
+     
+     // 2. Y ao cubo (Sem usar o pow() que causa bugs no Arduino)
+     float Y_cubo = Y_filtrado[1] * Y_filtrado[1] * Y_filtrado[1];
+     
+     // 3. Potência exata gerada pelo motorzinho
+     float Pot_exata = constante_aero * Y_cubo;
+
+     // 4. FATOR DE ESCALA DA MICRORREDE
+     // Multiplicamos por 1000 para que 0.05W físicos virem 50W no seu MATLAB
+     Pot_wt = Pot_exata * 100;
+
+
+
+     Serial.print("Pot_wt: ");
+     Serial.println(Pot_wt, 4);
+
+     
+
     // if (Y[1] < 1){
     //   Y_filtrado[1] = 0;
     //   x_est=0;
@@ -250,7 +275,7 @@ void loop() {
     
     // Ação de controle PI LPV
     //Uc = Krho*x(k);
-    Matrix.Multiply((mtx_type*)Krho, (mtx_type*)x, 1, N, N, (mtx_type*)Uc); // Uc = Krho*x
+    Matrix.Multiply((mtx_type*)Krho, (mtx_type*)x, 1, N, 1, (mtx_type*)Uc);
 
     
 
