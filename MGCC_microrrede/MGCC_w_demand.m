@@ -48,7 +48,7 @@ uel = 0;
 ucc = 0;
 
 % --- 1. Configuração da Comunicação Serial ---
-port = "COM9"; % !!! MUDE AQUI para a sua porta COM !!!
+port = "COM18"; % !!! MUDE AQUI para a sua porta COM !!!
 baudRate = 9600;
 s = serialport(port, baudRate);
 configureTerminator(s, "LF"); % Define o terminador de linha
