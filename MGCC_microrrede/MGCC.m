@@ -70,10 +70,20 @@ disp("Iniciando a leitura... ");
 startTime = datetime('now');
 i = 0;
 lastSendTime = 0;  % inicializa
+Pot_carga = 0;
+Pot_descarga = 0;
+ucc = 0;
+uel = 0;
 
 while ishandle(fig) % Continua enquanto a figura estiver aberta
     try
         i = i + 1;
+        
+        % 1. MATLAB envia os controles primeiro
+        linha = sprintf('%.1f,%.1f,%.1f,%.1f', Pot_carga, Pot_descarga, ucc, uel);
+        writeline(s, linha);
+
+        % 2. MATLAB lê a resposta do Arduino
         data_str = readline(s);
         valores = split(data_str, ',');  % cell array de strings
         valores_num = str2double(valores);  % array de doubles
@@ -99,15 +109,6 @@ while ishandle(fig) % Continua enquanto a figura estiver aberta
         
         % --- Chamada do controlador PI para SoC ---
         [Pot_carga, Pot_descarga, integrador] = controleSoC(SoC(i), SoC_ref, integrador, Kp, Ki, Ts, Pc_max, Pd_max);
-
-
-        % --- Envio a cada 1 segundo ---
-        t_now = seconds(datetime('now') - startTime);
-        if t_now - lastSendTime >= 1
-            lastSendTime = t_now;
-            linha = sprintf('%.1f,%.1f,%.1f,%.1f', Pot_carga, Pot_descarga, ucc, uel);
-            writeline(s, linha);
-        end
 
         % Atualiza gráficos
         t = seconds(datetime('now') - startTime);

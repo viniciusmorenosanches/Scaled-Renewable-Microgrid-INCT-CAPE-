@@ -108,19 +108,20 @@ void loop() {
 //      enviarMatlab(Matlab, { Level_H2, Pot_cc, Pot_total, SoC, Pot_wt, Pot_pv, Pc, Pd});
 //    }
 
-    // Lê do Matlab / Streamlit (AGORA LÊ 6 VALORES)
+    // Lê do Matlab / Streamlit (LÊ 4 OU 6 VALORES)
     if (receberMatlab(Matlab, matlabBuffer, 256)) {
       int qtd = splitStringToFloats(matlabBuffer, ',', dadosMatlab, 10); 
-      if (qtd >= 6) {
+      if (qtd >= 4) {
           Pc = dadosMatlab[0];
           Pd = dadosMatlab[1];
-          ucc = dadosMatlab[2];
-          uel = dadosMatlab[3];
-          ref_sol_serial = dadosMatlab[4];   // Sol do PC
-          ref_vento_serial = dadosMatlab[5]; // Vento do PC
+          ucc = (uint8_t)dadosMatlab[2];
+          uel = (uint8_t)dadosMatlab[3];
+          if (qtd >= 6) {
+              ref_sol_serial = dadosMatlab[4];   // Sol do PC
+              ref_vento_serial = dadosMatlab[5]; // Vento do PC
+          }
 
           enviarMatlab(Matlab, { Level_H2, Pot_cc, Pot_total, SoC, Pot_wt, Pot_pv, Pc, Pd});
-
       }
     }
 

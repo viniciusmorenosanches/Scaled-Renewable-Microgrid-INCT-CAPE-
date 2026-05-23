@@ -74,12 +74,12 @@ void enviarI2C(int endereco, float valor) {
 }
 
 
-inline void enviarMatlab(HardwareSerial &port, std::initializer_list<float> items) {
+inline void enviarMatlab(Stream &port, std::initializer_list<float> items) {
   int i = 0;
   int totalItems = items.size();
   
   for (float item : items) {
-    port.print(item, 2); // Imprime o float com 4 casas decimais
+    port.print(item, 2); // Imprime o float com 2 casas decimais
     if (i < totalItems - 1) {
       port.print(","); // Adiciona vírgula, exceto após o último item
     }
@@ -88,7 +88,7 @@ inline void enviarMatlab(HardwareSerial &port, std::initializer_list<float> item
   port.print("\n"); // Termina o "pacote" com uma nova linha
 }
 
-bool receberMatlab(HardwareSerial &port, char* destBuffer, int bufferSize) {
+bool receberMatlab(Stream &port, char* destBuffer, int bufferSize) {
   static int bufferIdx = 0; // Índice do buffer (mantém seu valor entre chamadas)
   bool pacoteCompleto = false;
 

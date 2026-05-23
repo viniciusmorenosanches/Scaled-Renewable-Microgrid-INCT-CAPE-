@@ -229,7 +229,7 @@ void loop() {
      float Pot_exata = constante_aero * Y_cubo;
 
      // 4. FATOR DE ESCALA DA MICRORREDE
-     // Multiplicamos por 1000 para que 0.05W físicos virem 50W no seu MATLAB
+     // Multiplicamos por 50 e adicionamos 150 para atingir a escala da microrrede do artigo (~180-250W)
      Pot_wt = Pot_exata * 50 + 150;
 
 
