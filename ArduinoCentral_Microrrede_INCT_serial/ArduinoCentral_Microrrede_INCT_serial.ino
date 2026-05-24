@@ -6,7 +6,7 @@
 
 //Bibliotecas
 #include <Wire.h>
-#include "Arduino_LED_Matrix.h"
+//#include "Arduino_LED_Matrix.h"
 #include "funcoes.h"
 #include "comunicacao_serial.h"
 //#include "referencias.h"
@@ -16,7 +16,7 @@
 
 #define Arduino_el Serial1
 
-ArduinoLEDMatrix matrix;
+//ArduinoLEDMatrix matrix;
 SerialTransfer R4Transfer;
 UnoToR4_Data DadosRecebidos;
 R4ToUno_Data DadosEnviar;
@@ -45,6 +45,7 @@ float Pot_total;
 const float Ts = 0.1; //segundos
 unsigned long tempo_ultimo_controle;
 unsigned long tempo_ultimo_controle_mpc;
+unsigned long tempo_ultima_comunicacao_serial = 0; // Guarda o tempo do último pacote recebido do PC
 float dt;
 int k = 0; //iteração
 
@@ -83,6 +84,7 @@ void setup() {
 
   tempo_ultimo_controle = millis();
   tempo_ultimo_controle_mpc = millis();
+  tempo_ultima_comunicacao_serial = millis();
 }
 
 
@@ -91,6 +93,16 @@ void loop() {
   if (millis() - tempo_ultimo_controle >= Ts*1000) {
     tempo_ultimo_controle = millis();
     k = k+1;
+
+    // Watchdog de comunicação serial: Se ficar sem receber pacotes do MATLAB por > 2s, zera tudo por segurança
+    if (millis() - tempo_ultima_comunicacao_serial > 2000) {
+      Pc = 0.0;
+      Pd = 0.0;
+      ucc = 0;
+      uel = 0;
+      ref_sol_serial = 0.0;
+      ref_vento_serial = 0.0;
+    }
 
     // NOVO: Envia ref sol que veio do PC para Arduino_pv
     enviarI2C(Arduino_pv, ref_sol_serial);
@@ -112,6 +124,7 @@ void loop() {
     if (receberMatlab(Matlab, matlabBuffer, 256)) {
       int qtd = splitStringToFloats(matlabBuffer, ',', dadosMatlab, 10); 
       if (qtd >= 4) {
+          tempo_ultima_comunicacao_serial = millis(); // Reseta watchdog ao receber dados válidos
           Pc = dadosMatlab[0];
           Pd = dadosMatlab[1];
           ucc = (uint8_t)dadosMatlab[2];
