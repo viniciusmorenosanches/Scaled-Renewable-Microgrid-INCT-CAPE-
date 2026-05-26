@@ -58,19 +58,27 @@ unsigned long currentMillis = 0;
 int k = 0;
 
 //Funcao que atualiza valor da referência
-void receberDados() {
-  Serial.println("Recebido");
-  byte buffer[4];
-  for (int i=0; i<4 && Wire.available(); i++) {
-    buffer[i] = Wire.read();
+void receberDados(int howMany) {
+  if (howMany == 4) {
+    byte buffer[4];
+    for (int i=0; i<4; i++) {
+      buffer[i] = Wire.read();
+    }
+    float tempRef;
+    memcpy(&tempRef, buffer, sizeof(float));
+    ref = tempRef;
+  } else {
+    // descarta dados se tamanho for inesperado
+    while (Wire.available()) {
+      Wire.read();
+    }
   }
-  memcpy(&ref, buffer, sizeof(float));
 }
 
 void enviarDados() {
-  Serial.println(Pot_pv);
+  float tempPot = Pot_pv;
   byte buffer[4];
-  memcpy(buffer, &Pot_pv, sizeof(float));
+  memcpy(buffer, &tempPot, sizeof(float));
   Wire.write(buffer, 4);  // envia os 4 bytes de uma vez
 }
 
@@ -94,22 +102,26 @@ void loop() {
   currentMillis = millis();
   if (currentMillis - previousMillis >= Ts * 1000) {
     previousMillis = currentMillis;
+    
+    // Leitura atômica da referência para evitar race condition com a ISR de I2C
+    noInterrupts();
+    float local_ref = ref;
+    interrupts();
+
     // Atualiza parâmetros da planta
     k = k+1;
     tau = tau0 + tau1 * rho;
     Ke  = Ke0 + Ke1 * rho;
 
-    rho = 1*ref;
+    rho = 1*local_ref;
 
     valorLido = analogRead(solarPin);
     tensao = (valorLido * 5.0) / 1023.0;
 
     tensaoFiltrada = alpha * tensao + (1 - alpha) * tensaoFiltrada_ant;    
 
-
-
-    erro = ref - (tensaoFiltrada);
-    //erro = ref - y;
+    erro = local_ref - (tensaoFiltrada);
+    //erro = local_ref - y;
 
       if (Uc[0][0]<0.0 || Uc[0][0]>5){I_erro[1] = I_erro[0];} //anti windup clamping (para de acumular IE quando satura)
       else
@@ -161,7 +173,7 @@ void loop() {
     // PWM de saída (opcional)
     analogWrite(ledPin, (int)(U / 5.0 * 255));
 
-    Pot_pv = 100*tensaoFiltrada;
+    Pot_pv = 150*tensaoFiltrada;
 
     //Print para análise
     Serial.print(Uc[0][0]);
@@ -170,7 +182,7 @@ void loop() {
     Serial.print(", ");
     Serial.print(erro);
     Serial.print(", ");
-    Serial.print(ref, 5);
+    Serial.print(local_ref, 5);
     Serial.print(", ");
     Serial.print(tensao);
     Serial.print(", ");

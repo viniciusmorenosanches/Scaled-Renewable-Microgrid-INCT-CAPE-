@@ -48,7 +48,7 @@ uel = 0;
 ucc = 0;
 
 % --- 1. Configuração da Comunicação Serial ---
-port = "COM18"; % !!! MUDE AQUI para a sua porta COM !!!
+port = "COM9"; % !!! MUDE AQUI para a sua porta COM !!!
 baudRate = 9600;
 s = serialport(port, baudRate);
 configureTerminator(s, "LF"); % Define o terminador de linha
@@ -318,27 +318,27 @@ while ishandle(fig) % Continua enquanto a figura estiver aberta
 end
 %%
 disp("Salvando dados em dados_microrrede.mat...");
-save('dados_microrrede_lixo.mat', ...
+save('dados_microrrede_test.mat', ...
      'nivelAgua', 'SoC', ...
      'Pot_cc', 'Pot_el', 'Pot_total', 'Pot_wt', 'Pot_pv', ...
      'Pot_carga', 'Pot_descarga', 'demand', 'dat_pot_carga', 'dat_pot_descarga');
 disp("Dados salvos com sucesso.");
 %%
 close all
-dat = load('dados_microrrede_final.mat');
+dat = load('dados_microrrede_test.mat');
 
 SoC_ref = 0.6;
 ref_h2 = 5;
-dat.Pot_total = dat.Pot_total(1:2400);
-dat.demand = dat.demand(1:2400);
-dat.Pot_wt = dat.Pot_wt(1:2400);
-dat.Pot_pv = dat.Pot_pv(1:2400);
-dat.nivelAgua = dat.nivelAgua(1:2400);
-dat.SoC = dat.SoC(1:2400);
-dat.dat_pot_carga = dat.dat_pot_carga(1:2400);
-dat.dat_pot_descarga = dat.dat_pot_descarga(1:2400);
-dat.Pot_el = dat.Pot_el(1:2400);
-dat.Pot_cc = dat.Pot_cc(1:2400);
+dat.Pot_total = dat.Pot_total(1:2390);
+dat.demand = dat.demand(1:2390);
+dat.Pot_wt = dat.Pot_wt(1:2390);
+dat.Pot_pv = dat.Pot_pv(1:2390);
+dat.nivelAgua = dat.nivelAgua(1:2390);
+dat.SoC = dat.SoC(1:2390);
+dat.dat_pot_carga = dat.dat_pot_carga(1:2390);
+dat.dat_pot_descarga = dat.dat_pot_descarga(1:2390);
+dat.Pot_el = dat.Pot_el(1:2390);
+dat.Pot_cc = dat.Pot_cc(1:2390);
 
 for i=2:length(dat.Pot_total)
     if dat.Pot_total(i) == 0
@@ -364,7 +364,7 @@ for j = 2:length(dat.Pot_wt)
     end
 end
 
-time = linspace(0,24,2400);
+time = linspace(0,24,2390);
 
 % figure
 % subplot(5,1,1)
@@ -432,9 +432,9 @@ time = linspace(0,24,2400);
 
 figure
 subplot(4,1,1)
-plot(time(1:2:2400),dat.Pot_total(1:2:2400), 'LineWidth', 1.5)
+plot(time(1:2:2390),dat.Pot_total(1:2:2390), 'LineWidth', 1.5)
 hold on
-plot(time(1:2:2400),dat.demand(1:2:2400), 'LineWidth', 1.5)
+plot(time(1:2:2390),dat.demand(1:2:2390), 'LineWidth', 1.5)
 legend('P_{total}(k)', 'P_{demand}(k)', 'FontSize', 12)
 ylabel('Power (W)', 'FontSize', 14)
 %xlabel('Time (h)', 'FontSize', 14)
@@ -442,11 +442,11 @@ xlim([0,24])
 grid on
 
 subplot(4,1,2)
-plot(time(1:2:2400),dat.Pot_wt(1:2:2400), 'LineWidth', 2.0)
+plot(time(1:2:2390),dat.Pot_wt(1:2:2390), 'LineWidth', 2.0)
 hold on
 
 dat.Pot_pv = movmean(dat.Pot_pv, 100);
-plot(time(1:2:2400), dat.Pot_pv(1:2:2400), 'LineWidth', 2.0)
+plot(time(1:2:2390), dat.Pot_pv(1:2:2390), 'LineWidth', 2.0)
 
 legend('P_{wt}(k)', 'P_{pv}(k)', 'FontSize', 12)
 ylabel('Renewable\newlineEnergy (W)', 'FontSize', 14)
@@ -455,9 +455,9 @@ xlim([0,24])
 grid on
 
 subplot(4,1,3)
-plot(time(1:2:2400),dat.SoC(1:2:2400), 'LineWidth', 2.0)
+plot(time(1:2:2390),dat.SoC(1:2:2390), 'LineWidth', 2.0)
 hold on
-plot(time(1:2:2400), SoC_ref*ones(length(dat.SoC)/2), 'LineWidth', 2.0, 'LineStyle','--', 'Color', 'r')
+plot(time(1:2:2390), SoC_ref*ones(length(dat.SoC)/2), 'LineWidth', 2.0, 'LineStyle','--', 'Color', 'r')
 legend('SoC(k)', 'SoC_{ref}(k)', 'FontSize', 12)
 ylabel('SoC (%)', 'FontSize', 14)
 %xlabel('Time (h)')
@@ -465,9 +465,9 @@ xlim([0,24])
 grid on
 
 subplot(4,1,4)
-plot(time(1:2:2400),dat.nivelAgua(1:2:2400), 'LineWidth', 2.0)
+plot(time(1:2:2390),dat.nivelAgua(1:2:2390), 'LineWidth', 2.0)
 hold on
-plot(time(1:2:2400), ref_h2*ones(length(dat.nivelAgua)/2), 'LineWidth', 2.0, 'LineStyle','--', 'Color', 'r')
+plot(time(1:2:2390), ref_h2*ones(length(dat.nivelAgua)/2), 'LineWidth', 2.0, 'LineStyle','--', 'Color', 'r')
 legend('H_2', 'H_2_{ref}', 'FontSize', 12)
 ylabel('Level of H_2\newline(mm)', 'FontSize', 14)
 xlabel('Time (h)', 'FontSize', 14)

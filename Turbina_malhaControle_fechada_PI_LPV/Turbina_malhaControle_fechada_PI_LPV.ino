@@ -96,18 +96,28 @@ const int numReadings = tsim/Ts; //numero de leituras
 //Funcao que atualiza valor da referência
 void receberDados(int howMany) {
   start = true; // libera execução do setup()
-  byte buffer[4];
-  for (int i=0; i<4 && Wire.available(); i++) {
-    buffer[i] = Wire.read();
+  if (howMany == 4) {
+    byte buffer[4];
+    for (int i=0; i<4; i++) {
+      buffer[i] = Wire.read();
+    }
+    float tempRef;
+    memcpy(&tempRef, buffer, sizeof(float));
+    if (tempRef > 0.0 && tempRef < 2.0){tempRef = tempRef + 2.0;}
+    Y_ref = tempRef;
+  } else {
+    // descarta dados se tamanho for inesperado
+    while (Wire.available()) {
+      Wire.read();
+    }
   }
-  memcpy(&Y_ref, buffer, sizeof(float));
-  if (Y_ref > 0.0 && Y_ref < 2.0){Y_ref = Y_ref + 2.0;}
 }
 
 
 void enviarDados() {
+  float tempPot = Pot_wt;
   byte buffer[4];
-  memcpy(buffer, (void*)&Pot_wt, sizeof(float)); 
+  memcpy(buffer, &tempPot, sizeof(float)); 
   Wire.write(buffer, 4);  
 }
 
@@ -156,9 +166,14 @@ void loop() {
   {
     previousMillis = currentMillis;
 
+    // Leitura atômica da referência para evitar race condition com a ISR de I2C
+    noInterrupts();
+    float local_Y_ref = Y_ref;
+    interrupts();
+
     //Calculo do agendamento rho
     
-    rho = Y_ref; 
+    rho = local_Y_ref; 
     
     // tau e Ke
     tau = 2.0323 + (-0.1478)*rho;
@@ -214,7 +229,7 @@ void loop() {
      float Pot_exata = constante_aero * Y_cubo;
 
      // 4. FATOR DE ESCALA DA MICRORREDE
-     // Multiplicamos por 1000 para que 0.05W físicos virem 50W no seu MATLAB
+     // Multiplicamos por 50 e adicionamos 150 para atingir a escala da microrrede do artigo (~180-250W)
      Pot_wt = Pot_exata * 50 + 150;
 
 
@@ -233,7 +248,7 @@ void loop() {
 
     //CALCULO DO ERRO E INTEGRAL DO ERRO
 
-    E = Y_ref - Y_filtrado[1];
+    E = local_Y_ref - Y_filtrado[1];
     // Serial.println(E);
 
     if (Uc[0][0]<1.0 || Uc[0][0]>5){IE_array[1] = IE_array[0];} //anti windup clamping (para de acumular IE quando satura)
@@ -285,7 +300,7 @@ void loop() {
  
 //    else {
     U = Uc[0][0];
-    if (U < 1.0){if (Y_ref != 0){U = 1.0;}else{U=0;}}
+    if (U < 1.0){if (local_Y_ref != 0){U = 1.0;}else{U=0;}}
       
     if (U > 5){U = 5;}
 
@@ -295,7 +310,7 @@ void loop() {
       x[1][0] = 0;
     } //Inicialização do motor
 
-    if (Y_ref == 0){U = 0;} //necessário para inicialização do ESC
+    if (local_Y_ref == 0){U = 0;} //necessário para inicialização do ESC
 
     
     ESC.write(U*38); // Envia o sinal de controle para o ESC
@@ -311,7 +326,7 @@ void loop() {
     Serial.print(",");
     //Serial.print(Y[1]);
     //Serial.print(",");
-    Serial.println(Y_ref);
+    Serial.println(local_Y_ref);
     //Serial.print(",");
     // Serial.print(E);
     // Serial.print(",");
