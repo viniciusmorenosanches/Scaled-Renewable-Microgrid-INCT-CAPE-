@@ -15,7 +15,7 @@
 Servo ESC;
  
 //Pinos arduino
-int PinEsc = 9;
+int PinEsc = 3;
 int PinTurbina = A3;
 
 volatile bool start = false; // MUST be volatile
@@ -127,7 +127,7 @@ void setup() {
   Wire.onReceive(receberDados);
 
   Serial.begin(115200);
-  while(!Serial); //Espera serial iniciar
+  //while(!Serial); //Espera serial iniciar
 
   // 1. ATTACH THE ESC FIRST
   ESC.attach(PinEsc, 1000, 2000); 

@@ -5,7 +5,7 @@
 
 // --- Configuration Constants ---
 static const float CUP_HEIGHT = 47.0;       // Container height in mm
-static const float EMA_ALPHA = 0.15;        // Smoothing factor (0.0 to 1.0, lower means more filtering)
+static const float EMA_ALPHA = 0.05;        // Smoothing factor (0.0 to 1.0, lower means more filtering)
 static const int MAX_ALLOWED_ERRORS = 3;    // Number of consecutive timeouts before reporting failure
 
 // Static/internal variables
@@ -56,8 +56,8 @@ float readWaterLevel() {
     waterLevelDistance = 0.0;
   }
 
-  // 5. Apply custom calibration scaling (15/16) and round to the nearest 0.5 mm
-  waterLevelDistance = round(waterLevelDistance * 0.9375 * 2.0) / 2.0;
+  // 5. Apply custom calibration scaling (15/16) without rounding
+  waterLevelDistance = waterLevelDistance * 0.9375;
 
   return waterLevelDistance;
 }

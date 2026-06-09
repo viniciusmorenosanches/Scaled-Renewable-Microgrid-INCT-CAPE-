@@ -95,7 +95,7 @@ void setup() {
   tensaoFiltrada_ant = (valorLido * 5.0) / 1023.0;
 
   Serial.begin(115200);
-  while(!Serial); //Espera serial iniciar
+  // while(!Serial); //Espera serial iniciar
 }
 
 void loop() {
