@@ -18,7 +18,7 @@ Pd_max = 200;    % potência máxima de descarga (ajuste conforme seu sistema)
 
 % --- 1. Configuração da Comunicação Serial ---
 port = "COM8"; % !!! MUDE AQUI para a sua porta COM !!!
-baudRate = 9600;
+baudRate = 115200;
 s = serialport(port, baudRate);
 configureTerminator(s, "LF"); % Define o terminador de linha
 disp("Conectado ao Arduino na porta " + port);
