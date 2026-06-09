@@ -37,6 +37,7 @@ N = 15;
 N_h_ctr = 15;
 
 mpc = init_mpc(N,N_h_ctr);
+mpc.linear_solver = 3;
 %% LTI system
 
 A = [delta_soc, 0, 0;

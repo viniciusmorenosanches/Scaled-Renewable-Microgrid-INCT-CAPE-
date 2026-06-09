@@ -78,7 +78,7 @@ void enviarI2C(int endereco, float valor);
 
 void setup() {
   Wire.begin(); // Inicia como master
-  Matlab.begin(9600);
+  Matlab.begin(115200);
   Arduino_el.begin(115200);
   R4Transfer.begin(Arduino_el);
 
@@ -89,6 +89,25 @@ void setup() {
 
 
 void loop() {
+
+  // Lê do Matlab / Streamlit imediatamente quando houver dados (sem esperar os 100ms)
+  if (receberMatlab(Matlab, matlabBuffer, 256)) {
+    int qtd = splitStringToFloats(matlabBuffer, ',', dadosMatlab, 10); 
+    if (qtd >= 4) {
+        tempo_ultima_comunicacao_serial = millis(); // Reseta watchdog ao receber dados válidos
+        Pc = dadosMatlab[0];
+        Pd = dadosMatlab[1];
+        ucc = (uint8_t)dadosMatlab[2];
+        uel = (uint8_t)dadosMatlab[3];
+        if (qtd >= 6) {
+            ref_sol_serial = dadosMatlab[4];   // Sol do PC
+            ref_vento_serial = dadosMatlab[5]; // Vento do PC
+        }
+        
+        Pot_total = Pot_pv + Pot_cc + Pot_wt - Pc + Pd;
+        enviarMatlab(Matlab, { Level_H2, Pot_cc, Pot_total, SoC, Pot_wt, Pot_pv, Pc, Pd});
+    }
+  }
 
   if (millis() - tempo_ultimo_controle >= Ts*1000) {
     tempo_ultimo_controle = millis();
@@ -113,30 +132,6 @@ void loop() {
     Pot_wt = lerDoI2C(Arduino_wt);
     
     Pot_total = Pot_pv + Pot_cc + Pot_wt - Pc + Pd;
-
-//    //Manda valores para MPC
-//    if (millis() - tempo_ultimo_controle_mpc >= Ts*1000) {
-//      tempo_ultimo_controle_mpc = millis();
-//      enviarMatlab(Matlab, { Level_H2, Pot_cc, Pot_total, SoC, Pot_wt, Pot_pv, Pc, Pd});
-//    }
-
-    // Lê do Matlab / Streamlit (LÊ 4 OU 6 VALORES)
-    if (receberMatlab(Matlab, matlabBuffer, 256)) {
-      int qtd = splitStringToFloats(matlabBuffer, ',', dadosMatlab, 10); 
-      if (qtd >= 4) {
-          tempo_ultima_comunicacao_serial = millis(); // Reseta watchdog ao receber dados válidos
-          Pc = dadosMatlab[0];
-          Pd = dadosMatlab[1];
-          ucc = (uint8_t)dadosMatlab[2];
-          uel = (uint8_t)dadosMatlab[3];
-          if (qtd >= 6) {
-              ref_sol_serial = dadosMatlab[4];   // Sol do PC
-              ref_vento_serial = dadosMatlab[5]; // Vento do PC
-          }
-
-          enviarMatlab(Matlab, { Level_H2, Pot_cc, Pot_total, SoC, Pot_wt, Pot_pv, Pc, Pd});
-      }
-    }
 
     DadosEnviar.ucc = ucc;
     DadosEnviar.uel = uel;
