@@ -14,3 +14,6 @@ serial_link.py
 
 # Ignore MATLAB simulation output data files (to prevent cluttering Git with huge mat files)
 MGCC_microrrede/dados_microrrede*.mat
+
+# Ignore MATLAB AutoSave files
+*.asv
