@@ -1,168 +1,149 @@
-clear all
-close all
-clc
+% microgrid_init_w_demand.m
+% Inicialização do MPC para o cenário de 24h com demanda variável.
+% Chamado por MGCC_w_demand.m no início da execução.
+%
+% Saídas relevantes para MGCC_w_demand.m:
+%   mpc    — objeto com toda a configuração do solver LPV-PILOT
+%   x0     — condição inicial do otimizador (warm-start)
+%   u_prev — controle inicial [Pc; Pd; uel; ucc] normalizados
+%   Bd0    — matriz de perturbações (usada no update a cada passo)
+%   n_rho  — número de parâmetros LPV (0 = LTI)
 
-%% Parameters
+% clear all
+% close all
+% clc
 
-Ts = 0.1;
+%% -------------------------------------------------------------------------
+%  Parâmetros do modelo de estado discreto (Ts = 100 ms)
+%  Estado: x = [SoC; nível_H2 (normalizado /10); Pot_total (normalizado /1000)]
+%  Entrada: u = [Pc; Pd; uel; ucc]  — todas normalizadas entre 0 e 1
+%  Perturbação: d = [Pot_wt; Pot_pv]  — em W
+% -------------------------------------------------------------------------
 
-k1 = 3.92e-5 * 400;
-k2 = 4.08e-5 * 400;
-%k3 = 130e-9;
-k3 = 0.1 * Ts; % mm/s
-%k4 = 82.63e-9;
-k4 = 0.0658 * Ts; % mm/s
+Ts = 0.1;   % período de amostragem [s]
 
-kcc = 154.57;
-kel = 10;
-kel = 150;    % É 10!!
+% Coeficientes do modelo de bateria (SoC)
+%   SoC[k+1] = delta_soc * SoC[k] + k1 * Pc[k] - k2 * Pd[k]
+%   k1 = eta_carga  * (Ts/3600) / E_nom     (normalizado por 400 W)
+%   k2 = eta_descarga * (Ts/3600) / E_nom
+k1 = 3.92e-5 * 400;   % coef. de carga da bateria
+k2 = 4.08e-5 * 400;   % coef. de descarga da bateria
 
-k5 = kcc/1000;
-k6 = kel/1000;
-k7 = 1/1000;
-k8 = 1/1000;
+% Coeficientes do modelo de nível de H2 (em mm, normalizado /10)
+%   nH2[k+1] = nH2[k] + k3 * uel[k] - k4 * ucc[k]
+k3 = 0.1  * Ts;    % taxa de enchimento pelo eletrolisador [mm/s]
+k4 = 0.0658 * Ts;  % taxa de esvaziamento pela célula combustível [mm/s]
 
-delta_soc = 0.995;
-delta_nh2 = 1;
+% Ganhos dos atuadores H2 (para cálculo de Pot_total)
+%   Pot_cc = kcc * ucc  [W]   — potência gerada pela célula combustível
+%   Pot_el = kel * uel  [W]   — potência consumida pelo eletrolisador
+kcc = 154.57;  % [W] — medido experimentalmente
+kel = 10;      % [W] — medido experimentalmente
 
-soc0 = 0.6;
-nh20 = 5;
-pot0 = 0.2;
+% Normalizações para o modelo (escala MPC trabalha em [0,1])
+k5 = kcc / 1000;
+k6 = kel / 1000;
+k7 = 1 / 1000;
+k8 = 1 / 1000;
 
-x_prev = [soc0;nh20;pot0];
+% Fatores de auto-decaimento
+delta_soc = 0.995;   % perda passiva de SoC por passo
+delta_nh2 = 1;       % nível de H2 sem perdas passivas
 
-%% Create MPC object
+% Condições iniciais
+soc0  = 0.6;   % SoC inicial [0..1]
+nh20  = 5;     % nível de H2 inicial [mm]
+pot0  = 0.2;   % Pot_total inicial normalizada
 
-N = 15;
-N_h_ctr = 15;
+x_prev = [soc0; nh20 / 10; pot0];
 
-mpc = init_mpc(N,N_h_ctr);
+%% -------------------------------------------------------------------------
+%  Criação do objeto MPC (solver LPV-PILOT)
+% -------------------------------------------------------------------------
+
+N       = 15;   % horizonte de predição
+N_h_ctr = 15;   % horizonte de controle
+
+mpc = init_mpc(N, N_h_ctr);
 mpc.linear_solver = 3;
-%% LTI system
 
-A = [delta_soc, 0, 0;
-     0 delta_nh2, 0;
-     0, 0, 0];
+%% Modelo LTI discreto
+%
+%  x[k+1] = A*x[k] + B*u[k] + Bd*d[k]
+%
+%  x = [SoC; nH2/10; Pot_total/1000]     (3 estados)
+%  u = [Pc; Pd; uel; ucc] / 400          (4 entradas normalizadas 0..1)
+%  d = [Pot_wt; Pot_pv]                  (2 perturbações, em W)
 
-B = [k1, -k2, 0, 0;
-     0, 0, k3, -k4;
-     -400/1000, 400/1000, -k6, k5];
+A = [delta_soc,  0,         0;
+     0,          delta_nh2, 0;
+     0,          0,         0];
 
-Bd = [0, 0; 0, 0; 1/1000, 1/1000];
+B = [k1,        -k2,       0,         0;
+     0,           0,       k3 / 10,  -k4 / 10;
+     -400/1000, 400/1000, -k6,        k5];
+
+Bd = [0,       0;
+      0,       0;
+      1/1000,  1/1000];
 
 C = eye(3);
 
-%sys_ct = ss(A,B,C,0);
-%sys = c2d(sys_ct,Ts);
+mpc = init_mpc_system(mpc, A, B, Bd, C, [0; 0; 0], []);
 
-mpc = init_mpc_system(mpc,A,B,Bd,C,[0;0;0],[]);
+%% -------------------------------------------------------------------------
+%  Pré-computação das matrizes de igualdade (Aeq, beq)
+%  n_rho = 0 indica sistema LTI (sem parametrização LPV no momento)
+% -------------------------------------------------------------------------
 
-%% Pre-computing Aeq in a hash table
-
-% LPV matrices
-A0 = A;
-
-B0 = B;
-
+A0  = A;
+B0  = B;
 Bd0 = Bd;
-
 n_rho = 0;
 
-[mpc.Aeq0] = init_mpc_Aeq(mpc, A0, B0, n_rho);
+[mpc.Aeq0]           = init_mpc_Aeq(mpc, A0, B0, n_rho);
 [mpc.beq0, mpc.beq_ff0] = init_mpc_beq(mpc, A0, Bd0, n_rho);
 
-%% Constraints
+%% -------------------------------------------------------------------------
+%  Restrições de estado e entrada
+% -------------------------------------------------------------------------
 
-x_min = [0;0;0];
-x_max = [1;10;1];
-tightening = 0;
-mpc = init_mpc_state_cnstr(mpc,x_min,x_max,tightening);
+% Estados: [SoC ∈ [-0.02, 1.02]; nH2/10 ∈ [-0.02, 10.02]; Pot_total/1000 ∈ [-0.05, 1.05]]
+x_min = [-0.02; -0.02; -0.05];
+x_max = [1.02; 10.02; 1.05];
+mpc = init_mpc_state_cnstr(mpc, x_min, x_max, 0);
 
-x_ter_min = [];%;0.05*ones(nx,1);
-x_ter_max = [];%1*ones(nx,1);
-%mpc = init_mpc_ter_state_cnstr(mpc,x_ter_min,x_ter_max);
+% Entradas normalizadas: todas entre 0 e 1
+u_min = [0; 0; 0; 0];
+u_max = [1; 1; 1; 1];
+mpc = init_mpc_u_cnstr(mpc, u_min, u_max);
 
-u_min = [0;0;0;0];
-u_max = [1;1;1;1];
-mpc = init_mpc_u_cnstr(mpc,u_min,u_max);
+%% -------------------------------------------------------------------------
+%  Custo do MPC
+%  Tracking: penaliza desvio do estado de referência
+%  Control:  penaliza esforço de controle (Pc, Pd mais caros que H2)
+% -------------------------------------------------------------------------
 
-%du_min = -0.1*ones(mpc.nu,1);
-%du_max = 0.1*ones(mpc.nu,1);
-%mpc = init_mpc_delta_u_cnstr(mpc,du_min,du_max);
-
-y_min = [];
-y_max = [];
-%mpc = init_mpc_output_cnstr(mpc,y_min,y_max);
-
-%% General Linear Inequalities
-
-Ci = [];
-Di = [];
-Ddi = [];
-
-yi_min = [];
-yi_max = [];
-
-%mpc = init_mpc_general_lin_ineq_cnstr(mpc,yi_min,yi_max,Ci,Di,Ddi);
-
-%% Terminal Ingredients
-
-% Qx = diag([3000 0.1]);
-% Ru = 1;
-% ter_constraint = 0;
-% x_ref_is_y = 1;
-% 
-% P = 1e4*[3.7 -1.2; -1.2 1];
-
-%[mpc] = init_mpc_ter_ingredients_dlqr(mpc,Qx,Ru,ter_constraint,x_ref_is_y, P);
-
-%% Costs
-
+% Peso do erro de rastreamento por estado
+%   [SoC, nH2, Pot_total] — Pot_total tem peso 100x maior (equilíbrio de energia)
 Qe = diag([1, 1, 100]);
-mpc = init_mpc_Tracking_cost(mpc,Qe);
+mpc = init_mpc_Tracking_cost(mpc, Qe);
 
-%Rdu = 1;
-%mpc = init_mpc_DiffControl_cost(mpc,Rdu);
+% Peso do esforço de controle por entrada
+%   [Pc, Pd, uel, ucc] — uel e ucc tem custo 0.001 (mais baratos que a bateria)
+Ru = diag([0.01, 0.01, 0.001, 0.001]);
+mpc = init_mpc_Control_cost(mpc, Ru);
 
-Ru = diag([0.01, 0.01, 0.01, 0.001]);
-%Ru = 0.01;
-mpc = init_mpc_Control_cost(mpc,Ru);
+%% -------------------------------------------------------------------------
+%  Configuração do solver
+% -------------------------------------------------------------------------
 
-%% Performance Cost Matrix
+mpc.t = 500;   % parâmetro de barreira logarítmica (agressividade do solver)
 
-Cz = [];
-Dz = [];
-Ddz = [];
+%% -------------------------------------------------------------------------
+%  Condições iniciais do otimizador (warm-start)
+% -------------------------------------------------------------------------
 
-Qz = [];
-
-%mpc = init_mpc_LinPerf_cost(mpc,Qz,Cz,Dz,Ddz);
-%% Set QP solver to be more aggressive
-
-mpc.t = 500;
-
-%%
-%mpc = defLtiMpc(N,A,B,C,D,Bd,Dd,Qe,Rdu,Ru,Cz,Dz,Ddz,Qz,Ci,Di,Ddi,...
-%    x_min,x_max,x_ter_min,x_ter_max,u_min,u_max,du_min,du_max,y_min,y_max,yi_min,yi_max)
-
-%% Init conditions for simulation
-
-x0 = 0*ones(mpc.Nu+mpc.Nx,1);
-u_prev = [0;0;0;0];
-d = [100;100];
-x0 = init_mpc_warm_start(mpc,x_prev,u_prev,d);
-
-%% Unit test
-        
-% Fixed demand
-% demand = 200;
-% 
-% xref = [0.6;5e-3;demand];
-% 
-% x_prev = [0.0;0*10^(-3);0];
-% 
-% d = [150; 150];
-% 
-% tic
-% [u_prev,J,x0] = mpc_solve(x0,x_prev,u_prev,xref,d,mpc,[],[],[]);
-% toc
+u_prev = [0; 0; 0; 0];
+d      = [100; 100];   % perturbação inicial (Pot_wt, Pot_pv em W)
+x0     = init_mpc_warm_start(mpc, x_prev, u_prev, d);
