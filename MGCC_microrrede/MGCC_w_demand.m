@@ -1,535 +1,356 @@
-% --- Script Avançado com Controle por Teclado em Tempo Real ---
+% MGCC_w_demand.m
+% Script principal do MGCC (Microgrid Central Controller) com MPC e demanda variável.
+%
+% Executa o cenário de 24h: lê perfis climáticos (solar/eólico) e de demanda,
+% envia referências ao Arduino R4 via serial, lê telemetria, chama o solver
+% MPC a cada 100 ms e plota os resultados em tempo real.
+%
+% Uso:
+%   1. Confirmar a porta serial em COM_PORT abaixo.
+%   2. Ligar todos os Arduinos e aguardar o ESC da turbina armar (~10 s).
+%   3. Executar este script no MATLAB.
+%
+% Dependências:
+%   microgrid_init_w_demand.m   — configuração do MPC (executada automaticamente)
+%   LPV-PILOT-final_features/   — solver MPC (biblioteca externa, não modificar)
+%   referenciaSol.csv           — perfil de geração solar (2400 pontos, 1 por passo)
+%   referenciaVento.csv         — perfil de geração eólica (2400 pontos, 1 por passo)
+%   dados_cenario_24h_reformulado.mat — perfil de demanda elétrica de 24h
+%
+% Saída:
+%   dados_microrrede_test.mat   — dados da simulação (sobrescrito a cada execução)
 
-% Limpeza inicial
-clear; clc; close all; clearvars;
+% =========================================================================
+%  Limpeza e inicialização
+% =========================================================================
 
+clear; clc; close all;
+warning('off', 'MATLAB:nearlySingularMatrix');
+
+% =========================================================================
+%  CONFIGURAÇÃO — editar aqui antes de rodar
+% =========================================================================
+
+COM_PORT = "COM9";   % porta serial do Arduino R4 (verificar no Gerenciador de Dispositivos)
+
+% Inicializa o MPC (carrega: mpc, x0, u_prev, Bd0, n_rho, Ts, kcc, kel, ...)
 microgrid_init_w_demand
 
+% Parâmetros do controlador H2 (heurística de nível)
+time_to_turn_on = 100;   % iterações antes de ativar o MPC (deixa o sistema estabilizar)
+SoC_ref = 0.6;           % referência de estado de carga da bateria
+ref_h2  = 12;            % referência de nível de H2 [mm]
+
+% =========================================================================
+%  Carregamento dos perfis climáticos e de demanda
+% =========================================================================
+
+disp("Carregando dados do cenário de 24h...");
 data = load("dados_cenario_24h_reformulado.mat");
 
-% --- Carregando as referências climáticas externas ---
-disp("Carregando perfis climáticos (CSV)...");
 try
-    array_ref_sol = readmatrix('referenciaSol.csv');
+    array_ref_sol   = readmatrix('referenciaSol.csv');
     array_ref_vento = readmatrix('referenciaVento.csv');
 catch
-    disp("Erro: Arquivos CSV não encontrados! Certifique-se de que estão na mesma pasta.");
-    return;
+    error("Arquivos CSV de referência não encontrados. Certifique-se de executar o MATLAB na pasta MGCC_microrrede/.");
 end
 
-% if ~isempty(instrfind)
-%      fclose(instrfind);
-%      delete(instrfind);
-% end
+% =========================================================================
+%  Comunicação serial com o Arduino R4
+% =========================================================================
 
-k1 = 3.92e-5 * 400;
-k2 = 4.08e-5 * 400;
-%k3 = 130e-9;
-k3 = 0.1 * Ts; % mm/s
-%k4 = 82.63e-9;
-k4 = 0.0658 * Ts; % mm/s
+s = serialport(COM_PORT, 115200);
+configureTerminator(s, "LF");
+disp("Conectado ao Arduino na porta " + COM_PORT);
 
-time_to_turn_on = 100;
+% =========================================================================
+%  Preparação da figura de monitoramento em tempo real
+% =========================================================================
 
-% --- Inicialização do controlador PI SoC---
-SoC_ref = 0.6;   % referência desejada
-ref_h2 = 5;
-Kp = 150;         % ganho proporcional
-Ki = 10;          % ganho integrador
-Ts = 0.1;        % tempo de amostragem aproximado em s
-integrador = 0;  % inicializa integrador
-Pc_max = 400;    % potência máxima de carga (ajuste conforme seu sistema)
-Pd_max = 400;    % potência máxima de descarga (ajuste conforme seu sistema)
+fig = figure('Name', 'Monitoramento Microrrede — Cenário 24h', 'NumberTitle', 'off');
+tiledlayout(fig, 3, 1);
 
-
-kcc = 154.57;
-kel = 10; % talvez seja 100
-uel = 0;
-ucc = 0;
-
-% --- 1. Configuração da Comunicação Serial ---
-port = "COM9"; % !!! MUDE AQUI para a sua porta COM !!!
-baudRate = 9600;
-s = serialport(port, baudRate);
-configureTerminator(s, "LF"); % Define o terminador de linha
-disp("Conectado ao Arduino na porta " + port);
-
-% --- 2. Preparação da Figura e Subplots ---
-fig = figure('Name','Monitoramento Microrrede','NumberTitle','off');
-tiledlayout(fig,3,1)  % 3 linhas, 1 coluna
-
-% Subplot 1: Nível da água
+% Subplot 1: Nível de H2
 ax1 = nexttile;
-h1 = animatedline(ax1,'Color','b');
+h1 = animatedline(ax1, 'Color', 'b');
 ax1.YGrid = 'on';
-title(ax1,'Nível de H2');
-xlabel(ax1,'Tempo (s)');
-ylabel(ax1,'Nível (mm)');
+title(ax1, 'Nível de H_2');
+xlabel(ax1, 'Tempo (s)');
+ylabel(ax1, 'Nível (mm)');
 
 % Subplot 2: Potências
 ax2 = nexttile;
-h2_cc     = animatedline(ax2,'Color','r','LineWidth',1.5,'DisplayName','Pot\_cc');
-h2_el     = animatedline(ax2,'Color','c','LineWidth',1.5,'DisplayName','Pot\_el');
-h2_total  = animatedline(ax2,'Color','k','LineWidth',1.5,'DisplayName','Pot\_total');
-h2_wt     = animatedline(ax2,'Color','g','LineWidth',1.5,'DisplayName','Pot\_wt');
-h2_pv     = animatedline(ax2,'Color','m','LineWidth',1.5,'DisplayName','Pot\_pv');
-h2_c     = animatedline(ax2,'Color','b','LineWidth',1.5,'DisplayName','Pot\_carga');
-h2_d     = animatedline(ax2,'Color','y','LineWidth',1.5,'DisplayName','Pot\_descarga');
-h2_demand = animatedline(ax2,'Color','cyan','LineWidth',1.0,'DisplayName','demand');
+h2_cc     = animatedline(ax2, 'Color', 'r',    'LineWidth', 1.5, 'DisplayName', 'Pot\_cc');
+h2_el     = animatedline(ax2, 'Color', 'c',    'LineWidth', 1.5, 'DisplayName', 'Pot\_el');
+h2_total  = animatedline(ax2, 'Color', 'k',    'LineWidth', 1.5, 'DisplayName', 'Pot\_total');
+h2_wt     = animatedline(ax2, 'Color', 'g',    'LineWidth', 1.5, 'DisplayName', 'Pot\_wt');
+h2_pv     = animatedline(ax2, 'Color', 'm',    'LineWidth', 1.5, 'DisplayName', 'Pot\_pv');
+h2_c      = animatedline(ax2, 'Color', 'b',    'LineWidth', 1.5, 'DisplayName', 'Pot\_carga');
+h2_d      = animatedline(ax2, 'Color', 'y',    'LineWidth', 1.5, 'DisplayName', 'Pot\_descarga');
+h2_demand = animatedline(ax2, 'Color', 'cyan', 'LineWidth', 1.0, 'DisplayName', 'Demanda');
 ax2.YGrid = 'on';
-legend(ax2,'show');
-title(ax2,'Potências');
-xlabel(ax2,'Tempo (s)');
-ylabel(ax2,'Potência (W)');
+legend(ax2, 'show');
+title(ax2, 'Potências');
+xlabel(ax2, 'Tempo (s)');
+ylabel(ax2, 'Potência (W)');
 
-% Subplot 3: Estado de Carga (SoC) com mostrador de bateria
+% Subplot 3: Estado de Carga (SoC) — mostrador de bateria
 ax3 = nexttile;
-%batteryBar = bar(ax3,0,0.5,'FaceColor','g'); % barra inicial
-ylim(ax3,[0 1]);
-xlim(ax3,[-0.5 0.5]);
+ylim(ax3, [0 1]);
+xlim(ax3, [-0.5 0.5]);
 ax3.XTick = [];
 ax3.YTick = [];
-title(ax3,'Estado de Carga da Bateria');
-% Desenha contorno da bateria
-hold(ax3,'on');
-rectangle(ax3,'Position',[-0.4 0 0.8 1],'EdgeColor','k','LineWidth',2); % corpo
-rectangle(ax3,'Position',[-0.1 1 0.2 0.1],'FaceColor','k'); % terminal
-socBar = rectangle(ax3,'Position',[-0.4 0 0 1],'FaceColor','white'); % preenchimento inicial
-hold(ax3,'off');
+title(ax3, 'Estado de Carga da Bateria');
+hold(ax3, 'on');
+rectangle(ax3, 'Position', [-0.4 0 0.8 1],  'EdgeColor', 'k', 'LineWidth', 2);
+rectangle(ax3, 'Position', [-0.1 1 0.2 0.1], 'FaceColor', 'k');
+socBar = rectangle(ax3, 'Position', [-0.4 0 0 1], 'FaceColor', 'white');
+hold(ax3, 'off');
 
+xlim_max = 55;
+xlim(ax1, [0, xlim_max]);
+xlim(ax2, [0, xlim_max]);
 
-% --- 3. Loop de Leitura e Plotagem ---
-disp("Iniciando a leitura... ");
-startTime = datetime('now');
-i = 0;
-lastSendTime = 0;  % inicializa
+% =========================================================================
+%  Inicialização das variáveis de estado do loop
+% =========================================================================
+
+i             = 0;
+nivelAgua     = zeros(1, 2400);
+SoC_arr       = zeros(1, 2400);
+Pot_cc_arr    = zeros(1, 2400);
+Pot_el_arr    = zeros(1, 2400);
+Pot_total_arr = zeros(1, 2400);
+Pot_wt_arr    = zeros(1, 2400);
+Pot_pv_arr    = zeros(1, 2400);
+demand        = zeros(1, 2400);
+dat_pot_carga    = zeros(1, 2400);
+dat_pot_descarga = zeros(1, 2400);
 
 nivelAgua(1) = 5;
-SoC(1) = 0.5;
-uel = 0;
-ucc = 0;
-Pot_carga = 0;
+SoC_arr(1)   = 0.5;
+uel          = 0;
+ucc          = 0;
+Pot_carga    = 0;
 Pot_descarga = 0;
 
-demand(1) = 0;
+total_loop_start = tic;
+dt_write = 0; dt_read = 0; dt_plot = 0; dt_mpc = 0; dt_total_paced = 0;
 
+disp("Iniciando cenário de 24h (2400 iterações de 100 ms = 240 s reais)...");
+startTime = datetime('now');
 
-while ishandle(fig) % Continua enquanto a figura estiver aberta
+% =========================================================================
+%  Loop principal — 10 Hz, 2400 iterações (= 24h simuladas)
+% =========================================================================
+
+while ishandle(fig)
+    i = i + 1;
+    if i > 2400
+        disp("Cenário de 24 horas concluído com sucesso!");
+        break;
+    end
+
     try
-        i = i + 1;
-        
-        % --------------------------------------------------
-        % 1. MATLAB MANDA AS ORDENS E REFERÊNCIAS PRIMEIRO
-        % --------------------------------------------------
+        iterStart = tic;
 
-        % Lê a referência de Sol do array. Se a simulação passar do 
-        % tamanho do CSV, mantém o último valor ou zera.
+        % ------------------------------------------------------------------
+        % 1. Ler referências climáticas do perfil para este passo
+        % ------------------------------------------------------------------
         if i <= length(array_ref_sol)
             ref_sol_volts = array_ref_sol(i);
         else
-            ref_sol_volts = 0; % Desliga se o cenário acabar
+            ref_sol_volts = 0;
         end
 
-        % Lê a referência de Vento do array
         if i <= length(array_ref_vento)
             ref_vento_volts = array_ref_vento(i);
         else
-            ref_vento_volts = 0; 
+            ref_vento_volts = 0;
         end
 
-        % Monta o pacote com as 6 variáveis para enviar ao Arduino
-        linha_envio = sprintf('%.2f,%.2f,%d,%d,%.2f,%.2f', Pot_carga, Pot_descarga, ucc, uel, ref_sol_volts, ref_vento_volts);
+        % ------------------------------------------------------------------
+        % 2. Enviar comandos e referências ao Arduino R4
+        %    Formato: Pc, Pd, ucc, uel, ref_sol, ref_vento  (CSV, 6 campos)
+        % ------------------------------------------------------------------
+        t_write = tic;
+        linha_envio = sprintf('%.2f,%.2f,%d,%d,%.2f,%.2f', ...
+                              Pot_carga, Pot_descarga, ucc, uel, ref_sol_volts, ref_vento_volts);
         writeline(s, linha_envio);
-        
-        % --------------------------------------------------
-        % 2. MATLAB LÊ A RESPOSTA (O Arduino responde imediatamente)
-        % -------------------------------------------------- 
-        data_str = readline(s);
+        dt_write = toc(t_write);
 
-        disp("RAW DATA DO R4: " + data_str);
+        % ------------------------------------------------------------------
+        % 3. Ler telemetria do Arduino R4
+        %    Formato: Level_H2, Pot_cc, Pot_total, SoC, Pot_wt, Pot_pv, Pc, Pd
+        % ------------------------------------------------------------------
+        t_read = tic;
+        data_str  = readline(s);
+        dt_read   = toc(t_read);
 
-        valores = split(data_str, ',');  % cell array de strings
-        valores_num = str2double(valores);  % array de doubles
+        if mod(i, 10) == 0
+            disp("RAW DATA DO R4: " + data_str);
+        end
+
+        % Divide os valores recebidos do R4.
+        % NOTA DE INTEGRAÇÃO: O R4 envia 8 valores via telemetria:
+        % [Level_H2, Pot_cc, Pot_total, SoC, Pot_wt, Pot_pv, Pc, Pd]
+        % Por decisão de projeto, o MATLAB utiliza do R4 apenas o nível de H2 (1),
+        % Pot_wt (5) e Pot_pv (6). O SoC e a Pot_cc são calculados localmente
+        % no modelo MATLAB para maior precisão e estabilidade.
+        valores_num = str2double(split(data_str, ','));
 
         nivelAgua(i) = valores_num(1);
-        %nivelAgua(i + 1) = 1*nivelAgua(i) + k3*uel - k4*ucc;
+        Pot_wt_arr(i) = valores_num(5);
+        Pot_pv_arr(i) = valores_num(6);
+        demand(i)     = data.demanda(i);
 
-        %Pot_cc(i)    = valores_num(2);
-        Pot_cc(i) = kcc*ucc;
+        % Potências dos atuadores H2 calculadas localmente (mais estável que ler do R4)
+        Pot_cc_arr(i) = kcc * ucc;
+        Pot_el_arr(i) = kel * uel;
 
-        Pot_el(i) = kel*uel;
-        %Pot_el(i) = 1;
-        
-        %SoC(i)       = valores_num(4); 
+        % Modelo de SoC calculado no MATLAB (modelo discreto, mais preciso que o do R4)
         if i > time_to_turn_on
-            SoC(i) = 0.995*SoC(i - 1) + k1/400*Pot_carga - k2/400*Pot_descarga;
+            SoC_arr(i) = 0.995 * SoC_arr(i-1) + (k1/400) * Pot_carga - (k2/400) * Pot_descarga;
+            SoC_arr(i) = max(0, min(1, SoC_arr(i)));   % saturação [0, 1]
         else
-            SoC(i) = 1;
-        end
-        
-        %SoC(i + 1) = 0.995*SoC(i) + k1/400*Pot_carga - k2/400*Pot_descarga;
-        Pot_wt(i)    = valores_num(5);%*50;
-        Pot_pv(i)    = valores_num(6);%*1.5;
-
-
-        %demand(i) = 0.8*Pot_wt(end) + 0.8*Pot_pv(end);
-        % if i > 500 && i <= 1000
-        %     demand(i) = data.demanda(i)*2.5;
-        % elseif i > 1000 && i <= 1500
-        %     demand(i) = data.demanda(i)*2.7;
-        % elseif i > 1500 && i < 2100
-        %     demand(i) =  data.demanda(i)*1.8;
-        % else
-        %     demand(i) = data.demanda(i)*2;
-        % end
-
-        demand(i) = data.demanda(i);
-
-      fprintf('Iteração: %d | Pot_pv: %.2f W | Pot_wt: %.2f W | SoC: %.2f | Nível H2: %.2f\n', ...
-                 i, Pot_pv(i), Pot_wt(i), SoC(i), nivelAgua(i));
-        % -------------------------------
-        
-
-        Pot_total(i) = Pot_wt(i) + Pot_pv(i) + Pot_cc(i) - Pot_el(i) - Pot_carga + Pot_descarga;
-
-        % % --- Envio a cada 1 segundo ---
-        % t_now = seconds(datetime('now') - startTime);
-        % if t_now - lastSendTime >= 1
-        %     lastSendTime = t_now;
-        %     linha = sprintf('%.1f,%.1f,%.1f,%.1f', Pot_carga, Pot_descarga, ucc, uel);
-        %     writeline(s, linha);
-        % end
-
-        % Atualiza gráficos
-        t = seconds(datetime('now') - startTime);
-
-        % Nível da água
-        addpoints(h1, t, nivelAgua(i));
-        ax1.XLim = [max(0, t - 50), t + 5];
-
-        % Potências
-        addpoints(h2_cc, t, Pot_cc(i));
-        addpoints(h2_el, t, Pot_el(i));
-        addpoints(h2_total, t, Pot_total(i));
-        addpoints(h2_wt, t, Pot_wt(i));
-        addpoints(h2_pv, t, Pot_pv(i));
-        addpoints(h2_d, t, Pot_descarga);
-        addpoints(h2_c, t, Pot_carga);
-        addpoints(h2_demand, t, demand(i));
-        ax2.XLim = [max(0, t - 50), t + 5];
-
-        % Estado de Carga
-        socBar.Position = [-0.4 0 0.8*SoC(i) 1]; % atualiza largura do preenchimento
-        if SoC(i) > 0.6
-            socBar.FaceColor = 'g';
-        elseif SoC(i) > 0.3
-            socBar.FaceColor = 'y';
-        else
-            socBar.FaceColor = 'r';
+            SoC_arr(i) = 1;   % aguarda estabilização antes de controlar
         end
 
-        drawnow limitrate; % otimiza performance
+        Pot_total_arr(i) = Pot_wt_arr(i) + Pot_pv_arr(i) + Pot_cc_arr(i) ...
+                           - Pot_el_arr(i) - Pot_carga + Pot_descarga;
+
+        if mod(i, 10) == 0
+            fprintf('Iter %d | Pot_pv=%.1f W | Pot_wt=%.1f W | SoC=%.3f | H2=%.1f mm\n', ...
+                    i, Pot_pv_arr(i), Pot_wt_arr(i), SoC_arr(i), nivelAgua(i));
+        end
+
+        % ------------------------------------------------------------------
+        % 4. Atualização dos gráficos (a cada 10 passos para reduzir custo)
+        % ------------------------------------------------------------------
+        t_plot = tic;
+        if mod(i, 10) == 0
+            t = seconds(datetime('now') - startTime);
+            addpoints(h1,        t, nivelAgua(i));
+            addpoints(h2_cc,     t, Pot_cc_arr(i));
+            addpoints(h2_el,     t, Pot_el_arr(i));
+            addpoints(h2_total,  t, Pot_total_arr(i));
+            addpoints(h2_wt,     t, Pot_wt_arr(i));
+            addpoints(h2_pv,     t, Pot_pv_arr(i));
+            addpoints(h2_d,      t, Pot_descarga);
+            addpoints(h2_c,      t, Pot_carga);
+            addpoints(h2_demand, t, demand(i));
+
+            if t > xlim_max - 5
+                xlim_max = xlim_max + 15;
+                xlim(ax1, [max(0, xlim_max - 55), xlim_max]);
+                xlim(ax2, [max(0, xlim_max - 55), xlim_max]);
+            end
+
+            % Atualiza mostrador de SoC
+            socBar.Position = [-0.4 0 0.8 * SoC_arr(i) 1];
+            if SoC_arr(i) > 0.6
+                socBar.FaceColor = 'g';
+            elseif SoC_arr(i) > 0.3
+                socBar.FaceColor = 'y';
+            else
+                socBar.FaceColor = 'r';
+            end
+
+            drawnow limitrate;
+        end
+        dt_plot = toc(t_plot);
+
+        % ------------------------------------------------------------------
+        % 5. Resolver o MPC — calcula Pc, Pd, uel, ucc para o próximo passo
+        % ------------------------------------------------------------------
+        t_mpc = tic;
+        if i > time_to_turn_on
+            xref  = [SoC_ref; ref_h2 / 10; demand(i) / 1000];
+            if isnan(nivelAgua(i))
+                nivelAtual = ref_h2;
+            else
+                nivelAtual = nivelAgua(i);
+            end
+            soc_prev = max(0.001, min(0.999, SoC_arr(i)));
+            nivelAtual = max(0.01, nivelAtual);
+            x_prev = [soc_prev; nivelAtual / 10; Pot_total_arr(i) / 1000];
+            d      = [Pot_wt_arr(i); Pot_pv_arr(i)];
+
+            mpc = update_mpc_Aeq(mpc, mpc.Aeq0, Bd0);
+            mpc = update_mpc_precomputed_beq(mpc, x_prev, d, n_rho, mpc.beq0, mpc.beq_ff0);
+
+            [u_sol, J, x0_sol] = mpc_solve(x0, x_prev, u_prev, xref, d, mpc, [], [], []);
+
+            if ~isnan(u_sol)
+                u_prev = u_sol;
+                x0     = x0_sol;
+                
+                Pot_carga    = u_prev(1) * 400;
+                Pot_descarga = u_prev(2) * 400;
+                uel = (u_prev(3) > 0.5);
+                ucc = (u_prev(4) > 0.5);
+
+                dat_pot_carga(i)    = Pot_carga;
+                dat_pot_descarga(i) = Pot_descarga;
+            else
+                disp("MPC retornou NaN na iteração " + i + " — reinicializando warm-start e mantendo último controle.");
+                u_prev = [Pot_carga / 400; Pot_descarga / 400; double(uel); double(ucc)];
+                x0     = init_mpc_warm_start(mpc, x_prev, u_prev, d);
+            end
+        end
+        dt_mpc = toc(t_mpc);
+
+        % ------------------------------------------------------------------
+        % 6. Pacing: aguardar para manter exatamente 10 Hz
+        %    Corrige drift cumulativo para que i*Ts corresponda ao tempo real
+        % ------------------------------------------------------------------
+        target_time    = i * Ts;
+        elapsed_total  = toc(total_loop_start);
+        time_to_pause  = target_time - elapsed_total;
+        if time_to_pause > 0
+            pause(time_to_pause);
+        end
+        dt_total_paced = toc(iterStart);
 
     catch ME
+        fprintf('Erro na iteração %d: %s\n', i, ME.message);
         if ~isvalid(s)
-            disp("A porta serial foi fechada. Encerrando.");
+            disp("Porta serial fechada. Encerrando.");
             break;
         end
     end
 
-    % Controle simples do nível de água
-    % if (nivelAgua(i)>=ref_h2)
-    %     ucc = 1;
-    %     uel = 0;
-    % elseif (nivelAgua(i)<=ref_h2 - 0.5)
-    %     ucc = 0;
-    %     uel = 1;
-    % end
-
-    % --- Chamada do controlador PI para SoC ---
-    % [Pot_carga, Pot_descarga, integrador] = controleSoC(SoC(end), SoC_ref, integrador, Kp, Ki, Ts, Pc_max, Pd_max)
-
-    if i > time_to_turn_on
-    %try
-        %%%%%%%%%%%%%%%%%%
-        %%%%%% MPC %%%%%%%
-        %%%%%%%%%%%%%%%%%%
-        
-        % Fixed demand
-        
-    
-        xref = [SoC_ref;ref_h2/10;demand(end)/1000];
-
-        if isnan(nivelAgua(end))
-            nivelAgua(end) = ref_h2;
-        end
-    
-        x_prev = [SoC(end); nivelAgua(end)/10; Pot_total(end)/1000];
-    
-        d = [Pot_wt(end); Pot_pv(end)];
-        %d = [0;0];
-
-        mpc = update_mpc_Aeq(mpc, mpc.Aeq0, Bd0);
-        % The function 'update_mpc_beq' can be replaced by
-        % update_mpc_precomputed_beq
-        mpc = update_mpc_precomputed_beq(mpc, x_prev, d, n_rho, ...
-            mpc.beq0, mpc.beq_ff0);
-    
-        tic
-        x0 = init_mpc_warm_start(mpc,x_prev,u_prev,d);
-        [u_prev,J,x0] = mpc_solve(x0,x_prev,u_prev,xref,d,mpc,[],[],[]);
-        toc
-    
-        if isnan(u_prev)
-            disp("Solution is NaN!")
-        else
-            Pot_carga = u_prev(1) * 400;
-            Pot_descarga = u_prev(2) * 400;
-
-            dat_pot_carga(i) = Pot_carga;
-            dat_pot_descarga(i) = Pot_descarga;
-        
-            if u_prev(3) > 0.5
-                uel = 1;
-            else
-                uel = 0;
-            end
-        
-            if u_prev(4) > 0.5
-                ucc = 1;
-            else
-                ucc = 0;
-            end
-          %  uel
-            %u_prev(3)
-         %   ucc
-            %u_prev(4)
-          %  disp("Solution is good!!!")
-        end
-        
-        
-    
-        %%%%%%%%%%%%%%%%%%
-        %%%%%%%%%%%%%%%%%%
-        %%%%%%%%%%%%%%%%%%
-    %catch
-     %   disp('Infeasible solution!');
+    if mod(i, 10) == 0
+        fprintf('--- TIMING (iter %d) ---\n', i);
+        fprintf('  Write: %.1f ms | Read: %.1f ms | Plot: %.1f ms | MPC: %.1f ms | Total: %.1f ms\n', ...
+                dt_write*1000, dt_read*1000, dt_plot*1000, dt_mpc*1000, dt_total_paced*1000);
+        fprintf('  Tempo simulado: %.2f h | Tempo real: %.1f s\n', i*0.01, toc(total_loop_start));
     end
 end
-%%
-disp("Salvando dados em dados_microrrede.mat...");
+
+% =========================================================================
+%  Salvar dados e gerar gráficos finais
+% =========================================================================
+
+N_pts = min(i, 2400);
+
+% Mapeia de volta para nomes de variáveis originais para retrocompatibilidade
+SoC       = SoC_arr;
+Pot_cc    = Pot_cc_arr;
+Pot_el    = Pot_el_arr;
+Pot_total = Pot_total_arr;
+Pot_wt    = Pot_wt_arr;
+Pot_pv    = Pot_pv_arr;
+
+disp("Salvando dados em dados_microrrede_test.mat...");
 save('dados_microrrede_test.mat', ...
-     'nivelAgua', 'SoC', ...
-     'Pot_cc', 'Pot_el', 'Pot_total', 'Pot_wt', 'Pot_pv', ...
-     'Pot_carga', 'Pot_descarga', 'demand', 'dat_pot_carga', 'dat_pot_descarga');
-disp("Dados salvos com sucesso.");
-%%
-close all
-dat = load('dados_microrrede_test.mat');
+     'nivelAgua', 'SoC', 'Pot_cc', 'Pot_el', 'Pot_total', ...
+     'Pot_wt', 'Pot_pv', 'Pot_carga', 'Pot_descarga', 'demand', ...
+     'dat_pot_carga', 'dat_pot_descarga');
+disp("Dados salvos.");
 
-SoC_ref = 0.6;
-ref_h2 = 5;
-dat.Pot_total = dat.Pot_total(1:2390);
-dat.demand = dat.demand(1:2390);
-dat.Pot_wt = dat.Pot_wt(1:2390);
-dat.Pot_pv = dat.Pot_pv(1:2390);
-dat.nivelAgua = dat.nivelAgua(1:2390);
-dat.SoC = dat.SoC(1:2390);
-dat.dat_pot_carga = dat.dat_pot_carga(1:2390);
-dat.dat_pot_descarga = dat.dat_pot_descarga(1:2390);
-dat.Pot_el = dat.Pot_el(1:2390);
-dat.Pot_cc = dat.Pot_cc(1:2390);
-
-for i=2:length(dat.Pot_total)
-    if dat.Pot_total(i) == 0
-        dat.Pot_total(i) = dat.Pot_total(i-1);
-    end
-    if dat.demand(i) == 0
-        dat.demand(i) = dat.demand(i-1);
-    end
-    if dat.Pot_wt(i) == 0 && i > 1
-        dat.Pot_wt(i) = dat.Pot_wt(i-1);
-    end
-    if dat.Pot_pv(i) == 0
-        dat.Pot_pv(i) = dat.Pot_pv(i-1);
-    end
-end
-
-% tratando dados
-dat.Pot_total = max(50, dat.Pot_total);
-
-for j = 2:length(dat.Pot_wt)
-    if dat.Pot_wt(j) < 50
-        dat.Pot_wt(j) = dat.Pot_wt(j - 1);
-    end
-end
-
-time = linspace(0,24,2390);
-
-% figure
-% subplot(5,1,1)
-% plot(time,dat.Pot_total, 'LineWidth', 1.5)
-% hold on
-% plot(time,dat.demand, 'LineWidth', 1.5)
-% plot(time,dat.Pot_wt, 'LineWidth', 2.0)
-% 
-% dat.Pot_pv = movmean(dat.Pot_pv, 100);
-% 
-% plot(time, dat.Pot_pv, 'LineWidth', 2.0)
-% %plot(dat.Pot_carga, 'LineWidth', 2.0,'LineStyle','-', 'Color', 'g')
-% %plot(dat.Pot_descarga, 'LineWidth', 2.0,'LineStyle','-', 'Color', 'y')
-% %plot(dat.Pot_el, 'LineWidth', 2.0,'LineStyle','-', 'Color', 'c')
-% %plot(dat.Pot_cc, 'LineWidth', 2.0,'LineStyle','-', 'Color', 'r')
-% legend('P_{total}(k)', 'y_{demand}(k)', 'P_{wt}(k)', 'P_{pv}(k)', 'NumColumns', 2, 'FontSize', 12)
-% ylabel('Power (W)', 'FontSize', 14)
-% %xlabel('Time (h)', 'FontSize', 14)
-% xlim([0,24])
-% grid on
-% 
-% dat.nivelAgua = movmean(dat.nivelAgua,10);
-% 
-% subplot(5,1,2)
-% plot(time,dat.nivelAgua, 'LineWidth', 2.0)
-% hold on
-% plot(time, ref_h2*ones(length(dat.nivelAgua)), 'LineWidth', 2.0, 'LineStyle','--', 'Color', 'r')
-% legend('H_2', 'H_2_{ref}', 'FontSize', 12)
-% ylabel('Level of H_2\newline(mm)', 'FontSize', 14)
-% %xlabel('Time (h)')
-% xlim([0,24])
-% grid on
-% 
-% subplot(5,1,3)
-% plot(time,dat.SoC, 'LineWidth', 2.0)
-% hold on
-% plot(time, SoC_ref*ones(length(dat.SoC)), 'LineWidth', 2.0, 'LineStyle','--', 'Color', 'r')
-% legend('SoC(k)', 'SoC_{ref}(k)', 'FontSize', 12)
-% ylabel('SoC (%)', 'FontSize', 14)
-% %xlabel('Time (h)')
-% xlim([0,24])
-% grid on
-% 
-% subplot(5,1,4)
-% plot(time,dat.dat_pot_carga, 'LineWidth', 2.0)
-% hold on
-% plot(time,dat.dat_pot_descarga, 'LineWidth', 2.0)
-% legend('P_{charge}', 'P_{discharge}', 'FontSize', 12)
-% ylabel('Battery\newlinecommand\newline(W)', 'FontSize', 14)
-% %xlabel('Time (h)')
-% xlim([0,24])
-% grid on
-% 
-% subplot(5,1,5)
-% dat.Pot_el = min(1,dat.Pot_el);
-% stairs(time,dat.Pot_el, 'LineWidth', 2.0)
-% hold on
-% dat.Pot_cc = min(1,dat.Pot_cc);
-% stairs(time,dat.Pot_cc, 'LineWidth', 2.0)
-% legend('u_{el}', 'u_{fc}', 'FontSize', 12)
-% ylabel('Electrol./\newlineFuel cell', 'FontSize', 14)
-% xlabel('Time (h)', 'FontSize', 12)
-% xlim([0,24])
-% grid on
-
-figure
-subplot(4,1,1)
-plot(time(1:2:2390),dat.Pot_total(1:2:2390), 'LineWidth', 1.5)
-hold on
-plot(time(1:2:2390),dat.demand(1:2:2390), 'LineWidth', 1.5)
-legend('P_{total}(k)', 'P_{demand}(k)', 'FontSize', 12)
-ylabel('Power (W)', 'FontSize', 14)
-%xlabel('Time (h)', 'FontSize', 14)
-xlim([0,24])
-grid on
-
-subplot(4,1,2)
-plot(time(1:2:2390),dat.Pot_wt(1:2:2390), 'LineWidth', 2.0)
-hold on
-
-dat.Pot_pv = movmean(dat.Pot_pv, 100);
-plot(time(1:2:2390), dat.Pot_pv(1:2:2390), 'LineWidth', 2.0)
-
-legend('P_{wt}(k)', 'P_{pv}(k)', 'FontSize', 12)
-ylabel('Renewable\newlineEnergy (W)', 'FontSize', 14)
-%xlabel('Time (h)', 'FontSize', 14)
-xlim([0,24])
-grid on
-
-subplot(4,1,3)
-plot(time(1:2:2390),dat.SoC(1:2:2390), 'LineWidth', 2.0)
-hold on
-plot(time(1:2:2390), SoC_ref*ones(length(dat.SoC)/2), 'LineWidth', 2.0, 'LineStyle','--', 'Color', 'r')
-legend('SoC(k)', 'SoC_{ref}(k)', 'FontSize', 12)
-ylabel('SoC (%)', 'FontSize', 14)
-%xlabel('Time (h)')
-xlim([0,24])
-grid on
-
-subplot(4,1,4)
-plot(time(1:2:2390),dat.nivelAgua(1:2:2390), 'LineWidth', 2.0)
-hold on
-plot(time(1:2:2390), ref_h2*ones(length(dat.nivelAgua)/2), 'LineWidth', 2.0, 'LineStyle','--', 'Color', 'r')
-legend('H_2', 'H_2_{ref}', 'FontSize', 12)
-ylabel('Level of H_2\newline(mm)', 'FontSize', 14)
-xlabel('Time (h)', 'FontSize', 14)
-xlim([0,24])
-grid on
-
-%%
-figure
-subplot(2,1,1)
-plot(time,-dat.dat_pot_carga + dat.dat_pot_descarga, 'LineWidth', 2.0)
-legend('P_{discharge} (>0) / P_{charge} (<0)', 'FontSize', 12)
-ylabel('Battery\newlinecommand\newline(W)', 'FontSize', 14)
-%xlabel('Time (h)')
-xlim([0,24])
-grid on
-
-subplot(2,1,2)
-dat.Pot_el = min(1,dat.Pot_el);
-dat.Pot_cc = min(1,dat.Pot_cc);
-stairs(time,- dat.Pot_el + dat.Pot_cc, 'LineWidth', 2.0)
-%hold on
-%stairs(time,dat.Pot_cc, 'LineWidth', 2.0)
-legend('u_{fc} (>0) / u_{el} (<0)', 'FontSize', 12)
-ylabel('Electrol./\newlineFuel cell', 'FontSize', 14)
-xlabel('Time (h)', 'FontSize', 14)
-xlim([0,24])
-grid on
-
-% --- 4. Limpeza ---
 clear s;
 disp("Comunicação serial encerrada.");
 
-
-% function [Pc, Pd, integrador] = controleSoC(SoC, SoC_ref, integrador, Kp, Ki, Ts, Pc_max, Pd_max)
-% % Controle PI para manter SoC próximo de SoC_ref
-% %
-% % Entradas:
-% % SoC       - valor atual do SoC
-% % SoC_ref   - referência desejada do SoC
-% % integrador- termo integrador acumulado
-% % Kp, Ki    - ganhos do controlador PI
-% % Ts        - período de amostragem
-% % Pc_max, Pd_max - limites máximos de potência de carga/descarga
-% %
-% % Saídas:
-% % Pc, Pd    - potências ajustadas
-% % integrador- termo integrador atualizado
-% 
-%     erro = SoC_ref - SoC;
-% 
-%     % Atualiza integrador
-%     integrador = integrador + erro*Ts;
-% 
-%     % Ação de controle PI
-%     u = Kp*erro + Ki*integrador;
-% 
-%     % Decide carga ou descarga
-%     if u > 0
-%         Pc = min(u, Pc_max);  % aplica carga
-%         Pd = 0;
-%     else
-%         Pc = 0;
-%         Pd = min(-u, Pd_max); % aplica descarga
-%     end
-% end
+%% Gráficos finais
+plotar_resultados_mgcc('dados_microrrede_test.mat', SoC_ref, ref_h2, N_pts);

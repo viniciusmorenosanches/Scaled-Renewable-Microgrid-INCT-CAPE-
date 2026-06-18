@@ -1,2 +1,20 @@
 # Ignore temporary scratch/development analysis scripts
 scratch/
+
+# Ignore Python caching and local virtual environments
+__pycache__/
+*.pyc
+.env
+.venv/
+
+# Ignore Python web app (as requested to not upload Python yet)
+web_app/
+
+# Ignore old/legacy Streamlit interface files
+app_interface_old/
+
+# Ignore MATLAB simulation output data files (to prevent cluttering Git with huge mat files)
+MGCC_microrrede/dados_microrrede*.mat
+
+# Ignore MATLAB AutoSave files
+*.asv
