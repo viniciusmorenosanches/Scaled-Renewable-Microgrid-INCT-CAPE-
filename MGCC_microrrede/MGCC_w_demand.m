@@ -199,7 +199,15 @@ while ishandle(fig)
         % no modelo MATLAB para maior precisão e estabilidade.
         valores_num = str2double(split(data_str, ','));
 
-        nivelAgua(i) = valores_num(1);
+        % ENQUANTO O SENSOR ESTÁ FALHANDO, VAMOS SIMULAR SEU VALOR
+        %nivelAgua(i) = valores_num(1);
+        if nivelAgua(i) < 8
+            nivelAgua(i) = nivelAgua(i-1) + k3*uel - k4*ucc;
+        else
+            nivelAgua(i) = nivelAgua(i-1) + k3_lpv_cima*uel - k4_lpv_cima*ucc;
+        end
+
+        
         Pot_wt_arr(i) = valores_num(5);
         Pot_pv_arr(i) = valores_num(6);
         demand(i)     = data.demanda(i);
@@ -210,7 +218,22 @@ while ishandle(fig)
 
         % Modelo de SoC calculado no MATLAB (modelo discreto, mais preciso que o do R4)
         if i > time_to_turn_on
-            SoC_arr(i) = 0.995 * SoC_arr(i-1) + (k1/400) * Pot_carga - (k2/400) * Pot_descarga;
+            if SoC_arr(i-1) > 0.7
+                rho_3 = 1;
+                rho_4 = 0.9;
+                rho_5 = 1;
+            end
+            if SoC_arr(i-1) <= 0.7 && SoC_arr(i-1) >= 0.3
+                rho_3 = 1;
+                rho_4 = 1;
+                rho_5 = 1;
+            end
+            if SoC_arr(i-1) < 0.3
+                rho_3 = 1;
+                rho_4 = 0.9*exp(-SoC_arr(i-1)/0.7);
+                rho_5 = 0.9;
+            end
+            SoC_arr(i) = rho_3 * 0.995 * SoC_arr(i-1) + rho_4*(k1/400) * Pot_carga - rho_5 * (k2/400) * Pot_descarga;
             SoC_arr(i) = max(0, min(1, SoC_arr(i)));   % saturação [0, 1]
         else
             SoC_arr(i) = 1;   % aguarda estabilização antes de controlar
@@ -276,8 +299,31 @@ while ishandle(fig)
             x_prev = [soc_prev; nivelAtual / 10; Pot_total_arr(i) / 1000];
             d      = [Pot_wt_arr(i); Pot_pv_arr(i)];
 
-            mpc = update_mpc_Aeq(mpc, mpc.Aeq0, Bd0);
-            mpc = update_mpc_precomputed_beq(mpc, x_prev, d, n_rho, mpc.beq0, mpc.beq_ff0);
+            % if nivelAgua(i) > 0 &&  nivelAgua(i) < 8
+            %     rho_1 = k3;
+            %     rho_2 = k4;
+            % else
+            %     rho_1 = k3_lpv_cima;
+            %     rho_2 = k4_lpv_cima;
+            % end
+            if nivelAgua(i) < 8
+                rho_1 = k3;
+                rho_2 = k4;
+            else
+                rho_1 = k3_lpv_cima;
+                rho_2 = k4_lpv_cima;
+            end
+            
+
+            Pk = repmat([rho_1; rho_2; rho_3; rho_4; rho_5], N); % Frozen gain schedulling
+
+            mpc = update_mpc_Aeq(mpc, mpc.Aeq0, Bd0, Pk, n_rho, mpc.Aeq1, mpc.Aeq2, mpc.Aeq3, mpc.Aeq4, mpc.Aeq5, ...
+                                    Bd1, Bd2, Bd3, Bd4, Bd5);
+            mpc = update_mpc_precomputed_beq(mpc, x_prev, d, Pk, n_rho, mpc.beq0, ...
+                                                mpc.beq1, mpc.beq2, mpc.beq3, mpc.beq4, mpc.beq5, ...
+                                                mpc.beq_ff0, mpc.beq_ff1, mpc.beq_ff2 , mpc.beq_ff3 , mpc.beq_ff4 , mpc.beq_ff5);
+
+
 
             [u_sol, J, x0_sol] = mpc_solve(x0, x_prev, u_prev, xref, d, mpc, [], [], []);
 
@@ -298,7 +344,7 @@ while ishandle(fig)
                 x0     = init_mpc_warm_start(mpc, x_prev, u_prev, d);
             end
         end
-        dt_mpc = toc(t_mpc);
+        dt_mpc = toc(t_mpc)
 
         % ------------------------------------------------------------------
         % 6. Pacing: aguardar para manter exatamente 10 Hz

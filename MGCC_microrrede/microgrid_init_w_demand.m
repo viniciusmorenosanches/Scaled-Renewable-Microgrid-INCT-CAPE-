@@ -34,6 +34,10 @@ k2 = 4.08e-5 * 400;   % coef. de descarga da bateria
 k3 = 0.1  * Ts;    % taxa de enchimento pelo eletrolisador [mm/s]
 k4 = 0.0658 * Ts;  % taxa de esvaziamento pela célula combustível [mm/s]
 
+% Adicionando ganhos não lineares LPV no hidrogenio
+k3_lpv_cima = k3/3;
+k4_lpv_cima = k4*3;
+
 % Ganhos dos atuadores H2 (para cálculo de Pot_total)
 %   Pot_cc = kcc * ucc  [W]   — potência gerada pela célula combustível
 %   Pot_el = kel * uel  [W]   — potência consumida pelo eletrolisador
@@ -96,13 +100,46 @@ mpc = init_mpc_system(mpc, A, B, Bd, C, [0; 0; 0], []);
 %  n_rho = 0 indica sistema LTI (sem parametrização LPV no momento)
 % -------------------------------------------------------------------------
 
-A0  = A;
-B0  = B;
+A0  = [0,  0,         0;
+     0,          delta_nh2, 0;
+     0,          0,         0];
+A1 = zeros(3);
+A2 = zeros(3);
+A3 = [1,  0, 0;
+     0,   0, 0;
+     0,   0, 0];
+A4 = zeros(3);
+A5 = zeros(3);
+B0  = [0,        0,       0,         0;
+        0,           0,      0,         0;
+        -400/1000, 400/1000, -k6,        k5];;
+B1 = [0,        0,       0,         0;
+     0,         0,       1 / 10,    0;
+     0,         0,            0,        0];
+B2 = [0,        0,       0,         0;
+     0,         0,       0,  -1 / 10;
+     0,         0,            0,        0];
+B3 = [0,        0,       0,         0;
+     0,         0,       0,  0;
+     0,         0,            0,        0];
+B4 = [k1,        0,       0,         0;
+     0,         0,       0,  0;
+     0,         0,            0,        0];
+B5 = [0,        -k2,       0,         0;
+     0,         0,       0,  0;
+     0,         0,            0,        0];
 Bd0 = Bd;
-n_rho = 0;
+Bd1 = [0,0;0,0;0,0];
+Bd2 = [0,0;0,0;0,0];
+Bd3 = [0,0;0,0;0,0];
+Bd4 = [0,0;0,0;0,0];
+Bd5 = [0,0;0,0;0,0];
+n_rho = 5;
 
-[mpc.Aeq0]           = init_mpc_Aeq(mpc, A0, B0, n_rho);
-[mpc.beq0, mpc.beq_ff0] = init_mpc_beq(mpc, A0, Bd0, n_rho);
+[mpc.Aeq0, mpc.Aeq1, mpc.Aeq2, mpc.Aeq3, mpc.Aeq4, mpc.Aeq5] = init_mpc_Aeq(mpc, A0, B0, n_rho,A1,A2,A3,A4,A5, ...
+                                                                                            B1,B2,B3,B4,B5);
+[mpc.beq0, mpc.beq1, mpc.beq2, mpc.beq3,mpc.beq4,mpc.beq5,mpc.beq_ff0, mpc.beq_ff1, mpc.beq_ff2, mpc.beq_ff3, mpc.beq_ff4, mpc.beq_ff5] = init_mpc_beq(mpc, A0, Bd0, n_rho,A1,A2,A3,A4,A5,Bd1,Bd2,Bd3,Bd4,Bd5);
+
 
 %% -------------------------------------------------------------------------
 %  Restrições de estado e entrada
