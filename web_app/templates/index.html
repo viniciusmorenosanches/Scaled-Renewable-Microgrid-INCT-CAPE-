@@ -1,0 +1,1126 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⚡ Gêmeo Digital da Microrrede</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Plotly.js -->
+    <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Outfit', 'sans-serif'],
+                    },
+                    colors: {
+                        darkBg: '#090D1A',
+                        panelBg: 'rgba(17, 23, 41, 0.7)',
+                        accentPurple: '#D946EF',
+                        accentOrange: '#F97316',
+                        accentGreen: '#10B981',
+                        accentBlue: '#0EA5E9',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #08090c;
+            background-image: none;
+            background-attachment: fixed;
+        }
+        .glass-panel {
+            background: #151820;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            box-shadow: 0 4px 20px 0 rgba(0, 0, 0, 0.25);
+        }
+        #sidebar-panel {
+            background-color: #0e0f14 !important;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            box-shadow: 0 4px 20px 0 rgba(0, 0, 0, 0.25);
+        }
+        @media (min-width: 1024px) {
+            #sidebar-panel {
+                position: sticky;
+                top: 6rem;
+                max-height: calc(100vh - 8rem);
+                overflow-y: auto;
+            }
+        }
+        .glow-green {
+            box-shadow: 0 0 15px rgba(16, 185, 129, 0.4);
+        }
+        .glow-red {
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.4);
+        }
+        .glow-blue {
+            box-shadow: 0 0 15px rgba(14, 165, 233, 0.4);
+        }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.3);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+    </style>
+</head>
+<body class="text-slate-100 min-h-screen pb-8">
+
+    <!-- Navbar / Header -->
+    <header class="w-full py-4 px-6 mb-6 glass-panel sticky top-0 z-50 flex items-center justify-between border-b border-white/5">
+        <div class="flex items-center space-x-3">
+            <!-- Sidebar toggle button -->
+            <button id="btn-toggle-sidebar" onclick="toggleSidebar()" class="px-3 py-1.5 bg-slate-800/80 hover:bg-slate-700/80 rounded-lg text-slate-300 hover:text-white transition-colors border border-white/5 flex items-center gap-1.5 mr-2">
+                <span id="toggle-sidebar-icon">◀</span>
+                <span id="toggle-sidebar-text" class="text-xs font-semibold hidden sm:inline">Ocultar Painel</span>
+            </button>
+            <span class="text-3xl">⚡</span>
+            <div>
+                <h1 class="text-xl font-bold bg-gradient-to-r from-sky-400 via-indigo-400 to-fuchsia-400 bg-clip-text text-transparent">Gêmeo Digital da Microrrede</h1>
+                <p class="text-xs text-slate-400">INCT-CAPE Microgrid HIL Control Panel</p>
+            </div>
+        </div>
+        <!-- Status Indicator -->
+        <div id="status-badge" class="flex items-center space-x-2 px-3 py-1.5 rounded-full text-xs font-semibold glass-panel border border-white/10">
+            <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse glow-red"></span>
+            <span id="status-text" class="text-slate-300">Desconectado</span>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="max-w-[1600px] mx-auto px-6 grid grid-cols-12 gap-6">
+
+        <!-- Sidebar (Controls) -->
+        <aside id="sidebar-panel" class="col-span-12 lg:col-span-3 flex flex-col space-y-6 transition-all duration-300 rounded-2xl p-5">
+
+            <!-- Hardware Connection Panel -->
+            <div class="flex flex-col space-y-4">
+                <h3 class="text-sm font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                    <span>🔌</span> Conexão Física (Cabo USB)
+                </h3>
+                <div class="flex flex-col space-y-2">
+                    <label class="text-xs text-slate-400 font-medium">Porta Serial</label>
+                    <input type="text" id="serial-port" value="COM9" class="w-full px-3 py-2 bg-slate-950/70 border border-slate-800 rounded-lg text-slate-100 font-mono text-sm focus:outline-none focus:border-indigo-500 transition-colors">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <button id="btn-connect" onclick="connectSerial()" class="py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-semibold text-xs tracking-wider transition-colors">CONECTAR</button>
+                    <button id="btn-disconnect" onclick="disconnectSerial()" class="py-2.5 px-4 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 disabled:pointer-events-none rounded-lg font-semibold text-xs tracking-wider transition-colors" disabled>DESCONECTAR</button>
+                </div>
+            </div>
+
+            <hr class="border-slate-800/60">
+
+            <!-- Profile Loader Panel -->
+            <div class="flex flex-col space-y-4">
+                <h3 class="text-sm font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                    <span>📂</span> Perfis de Entrada
+                </h3>
+                
+                <div class="flex flex-col space-y-3">
+                    <!-- Solar Dropdown -->
+                    <div>
+                        <label class="text-xs text-slate-400 font-medium">Perfil Solar</label>
+                        <select id="sel-solar" onchange="handleProfileSelection('solar', this.value)" class="w-full mt-1 px-3 py-2 bg-slate-950/70 border border-slate-800 rounded-lg text-slate-100 text-xs focus:outline-none focus:border-indigo-500">
+                            <option value="ensolarado">Perfil Ensolarado</option>
+                            <option value="nublado">Perfil Nublado</option>
+                            <option value="__upload__">➕ Adicionar novo...</option>
+                        </select>
+                    </div>
+
+                    <!-- Wind Dropdown -->
+                    <div>
+                        <label class="text-xs text-slate-400 font-medium">Perfil Eólico</label>
+                        <select id="sel-wind" onchange="handleProfileSelection('wind', this.value)" class="w-full mt-1 px-3 py-2 bg-slate-950/70 border border-slate-800 rounded-lg text-slate-100 text-xs focus:outline-none focus:border-indigo-500">
+                            <option value="normal">Perfil Normal</option>
+                            <option value="ventania">Perfil Ventania</option>
+                            <option value="__upload__">➕ Adicionar novo...</option>
+                        </select>
+                    </div>
+
+                    <!-- Demand Dropdown -->
+                    <div>
+                        <label class="text-xs text-slate-400 font-medium">Perfil de Demanda</label>
+                        <select id="sel-demand" onchange="handleProfileSelection('demand', this.value)" class="w-full mt-1 px-3 py-2 bg-slate-950/70 border border-slate-800 rounded-lg text-slate-100 text-xs focus:outline-none focus:border-indigo-500">
+                            <option value="residencial">Perfil Residencial (Base)</option>
+                            <option value="__upload__">➕ Adicionar novo...</option>
+                        </select>
+                    </div>
+
+                    <!-- Hidden file picker -->
+                    <input type="file" id="profile-file" class="hidden" onchange="uploadProfile()">
+
+                    <!-- Run/Stop controls -->
+                    <div class="border-t border-slate-800/80 pt-3">
+                        <label class="text-xs text-slate-400 font-medium block font-semibold">Modo Execução Perfil (4 min)</label>
+                        <div class="flex items-center justify-between mt-2 bg-slate-950/50 p-2.5 rounded-lg border border-slate-800/80">
+                            <span class="text-xs text-slate-300" id="profile-scenario-label">Cenário 24h</span>
+                            <button id="btn-profile-toggle" onclick="toggleProfile()" class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-xs font-bold rounded-lg transition-colors border border-white/5 opacity-50 pointer-events-none" disabled>INICIAR</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <hr class="border-slate-800/60">
+
+            <!-- Controller Logic Brain Selector -->
+            <div class="flex flex-col space-y-4">
+                <h3 class="text-sm font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                    <span>🧠</span> Estratégia de Controle
+                </h3>
+                
+                <div class="flex flex-col space-y-2">
+                    <label class="flex items-center space-x-3 p-2 bg-slate-950/40 hover:bg-slate-950/80 rounded-lg cursor-pointer border border-transparent transition-colors">
+                        <input type="radio" name="mode" value="matlab_mpc" checked onchange="updateSettings()" class="text-indigo-600 focus:ring-0">
+                        <div class="text-xs font-medium text-slate-200">MPC Padrão (MATLAB Engine)</div>
+                    </label>
+                    <label class="flex items-center space-x-3 p-2 bg-slate-950/40 hover:bg-slate-950/80 rounded-lg cursor-pointer border border-transparent transition-colors">
+                        <input type="radio" name="mode" value="custom" onchange="updateSettings()" class="text-indigo-600 focus:ring-0">
+                        <div class="text-xs font-medium text-slate-200">Algoritmo Externo (Customizado)</div>
+                    </label>
+                    <label class="flex items-center space-x-3 p-2 bg-slate-950/40 hover:bg-slate-950/80 rounded-lg cursor-pointer border border-transparent transition-colors">
+                        <input type="radio" name="mode" value="manual" onchange="updateSettings()" class="text-indigo-600 focus:ring-0">
+                        <div class="text-xs font-medium text-slate-200">Controle Manual Override</div>
+                    </label>
+                </div>
+
+                <!-- Custom Controller Upload Panel (visible only when custom mode selected) -->
+                <div id="custom-controller-panel" class="hidden flex flex-col space-y-3 pt-3 border-t border-slate-800/80">
+                    <div class="bg-slate-950/50 p-3 rounded-lg border border-slate-800/80">
+                        <label class="text-xs text-slate-400 font-semibold mb-2 block">Upload do Controlador</label>
+                        <input type="file" id="controller-file" class="hidden" onchange="uploadController()">
+                        <button onclick="document.getElementById('controller-file').click()" class="w-full py-2 px-3 bg-slate-950 border border-dashed border-slate-700 hover:border-slate-500 hover:bg-slate-900 rounded-lg text-xs font-semibold transition-colors flex items-center justify-center gap-2">
+                            <span>📤</span> Enviar arquivo .py ou .m
+                        </button>
+                        <span id="controller-upload-status" class="text-[10px] text-slate-400 block mt-2 text-center">Nenhum arquivo enviado</span>
+                    </div>
+                </div>
+
+                <!-- MPC Weights Controls (visible only when matlab_mpc selected) -->
+                <div id="mpc-weights-panel" class="hidden flex flex-col space-y-3 pt-3 border-t border-slate-800/80">
+                    <span class="text-xs font-semibold text-slate-300">Pesos do Controlador (MPC)</span>
+                    
+                    <div>
+                        <div class="flex justify-between text-[11px] font-medium text-slate-400">
+                            <span>Ref. Bateria (Q<sub>soc</sub>)</span>
+                            <span id="val-q-soc" class="font-mono text-indigo-400">0.5</span>
+                        </div>
+                        <input type="range" id="slider-q-soc" min="0.0" max="1.0" value="0.5" step="0.05" oninput="updateMpcWeightsLabels()" onchange="updateSettings()" class="w-full mt-1.5 accent-indigo-500">
+                    </div>
+
+                    <div>
+                        <div class="flex justify-between text-[11px] font-medium text-slate-400">
+                            <span>Ref. H<sub>2</sub> (Q<sub>h2</sub>)</span>
+                            <span id="val-q-h2" class="font-mono text-indigo-400">0.2</span>
+                        </div>
+                        <input type="range" id="slider-q-h2" min="0.0" max="1.0" value="0.2" step="0.05" oninput="updateMpcWeightsLabels()" onchange="updateSettings()" class="w-full mt-1.5 accent-indigo-500">
+                    </div>
+
+                    <div>
+                        <div class="flex justify-between text-[11px] font-medium text-slate-400">
+                            <span>Priorizar Demanda (Q<sub>load</sub>)</span>
+                            <span id="val-q-load" class="font-mono text-indigo-400">0.8</span>
+                        </div>
+                        <input type="range" id="slider-q-load" min="0.0" max="1.0" value="0.8" step="0.05" oninput="updateMpcWeightsLabels()" onchange="updateSettings()" class="w-full mt-1.5 accent-indigo-500">
+                    </div>
+                </div>
+
+                <!-- Manual controls overrides (visible only when manual mode selected) -->
+                <div id="manual-panel" class="hidden flex flex-col space-y-3 pt-3 border-t border-slate-800/80">
+                    <div>
+                        <div class="flex justify-between text-xs font-medium text-slate-300">
+                            <span>Bateria (Carga / Descarga)</span>
+                            <span id="val-bat" class="font-mono text-fuchsia-400">0 W</span>
+                        </div>
+                        <input type="range" id="slider-bat" min="-200" max="200" value="0" step="5" oninput="updateManualPowerLabel(this.value)" onchange="updateSettings()" class="w-full mt-2 accent-fuchsia-500">
+                        <div class="flex justify-between text-[10px] text-slate-500 font-mono mt-0.5">
+                            <span>-200W (Carga)</span>
+                            <span>0</span>
+                            <span>+200W (Descarga)</span>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div class="flex justify-between text-xs font-medium text-slate-300">
+                            <span>Referência Solar</span>
+                            <span id="val-ref-sol" class="font-mono text-amber-400">0.00 V</span>
+                        </div>
+                        <input type="range" id="slider-ref-sol" min="0.0" max="1.4" value="0.0" step="0.05" oninput="document.getElementById('val-ref-sol').innerText = parseFloat(this.value).toFixed(2) + ' V'" onchange="updateSettings()" class="w-full mt-2 accent-amber-500">
+                        <div class="flex justify-between text-[10px] text-slate-500 font-mono mt-0.5">
+                            <span>Min: 0.0 V</span>
+                            <span>Max: 1.4 V</span>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div class="flex justify-between text-xs font-medium text-slate-300">
+                            <span>Referência Eólica</span>
+                            <span id="val-ref-vento" class="font-mono text-sky-400">0.00 V</span>
+                        </div>
+                        <input type="range" id="slider-ref-vento" min="0.0" max="4.5" value="0.0" step="0.05" oninput="document.getElementById('val-ref-vento').innerText = parseFloat(this.value).toFixed(2) + ' V'" onchange="updateSettings()" class="w-full mt-2 accent-sky-500">
+                        <div class="flex justify-between text-[10px] text-slate-500 font-mono mt-0.5">
+                            <span>Min: 0.0 V</span>
+                            <span>Max: 4.5 V</span>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-col space-y-2 pt-1">
+                        <span class="text-xs text-slate-400 font-medium">Hidrogênio (Gás)</span>
+                        <div class="grid grid-cols-2 gap-3">
+                            <label class="flex flex-col items-center p-2 rounded-lg bg-slate-950 border border-slate-800 cursor-pointer">
+                                <span class="text-[10px] text-slate-400 font-medium uppercase mb-1">Fuel Cell</span>
+                                <input type="checkbox" id="toggle-fc" onchange="updateSettings()" class="w-9 h-5 bg-gray-200 rounded-full appearance-none checked:bg-orange-500 relative before:content-[''] before:absolute before:w-4 before:h-4 before:rounded-full before:bg-white before:top-0.5 before:left-0.5 checked:before:translate-x-4 before:transition-transform cursor-pointer">
+                            </label>
+                            <label class="flex flex-col items-center p-2 rounded-lg bg-slate-950 border border-slate-800 cursor-pointer">
+                                <span class="text-[10px] text-slate-400 font-medium uppercase mb-1">Eletrolisador</span>
+                                <input type="checkbox" id="toggle-ely" onchange="updateSettings()" class="w-9 h-5 bg-gray-200 rounded-full appearance-none checked:bg-teal-500 relative before:content-[''] before:absolute before:w-4 before:h-4 before:rounded-full before:bg-white before:top-0.5 before:left-0.5 checked:before:translate-x-4 before:transition-transform cursor-pointer">
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area (KPIs and Charts) -->
+        <div id="main-content-panel" class="col-span-12 lg:col-span-9 flex flex-col space-y-6 transition-all duration-300">
+            
+            <!-- KPI Metrics Strip -->
+            <section class="grid grid-cols-5 gap-4">
+                <!-- Clock card -->
+                <div class="glass-panel rounded-xl p-4 flex flex-col justify-between relative overflow-hidden group hover:border-sky-500/30 transition-all duration-300">
+                    <span class="text-xs font-medium uppercase tracking-wider text-slate-400">Tempo Decorrido</span>
+                    <span id="kpi-time" class="text-3xl font-bold text-sky-400 mt-2 font-mono">0s</span>
+                    <div class="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-sky-400 animate-ping"></div>
+                </div>
+                <!-- Demand Card -->
+                <div class="glass-panel rounded-xl p-4 flex flex-col justify-between group hover:border-slate-700/50 transition-all duration-300">
+                    <span class="text-xs font-medium uppercase tracking-wider text-slate-400">Demanda Consumida</span>
+                    <span id="kpi-demand" class="text-3xl font-bold text-white mt-2">-- W</span>
+                </div>
+
+                <!-- Generation Card -->
+                <div class="glass-panel rounded-xl p-4 flex flex-col justify-between group hover:border-emerald-500/30 transition-all duration-300">
+                    <span class="text-xs font-medium uppercase tracking-wider text-slate-400">Geração Renovável</span>
+                    <span id="kpi-gen" class="text-3xl font-bold text-emerald-400 mt-2">-- W</span>
+                </div>
+                <!-- Battery SoC Card -->
+                <div class="glass-panel rounded-xl p-4 flex flex-col justify-between group hover:border-fuchsia-500/30 transition-all duration-300">
+                    <span class="text-xs font-medium uppercase tracking-wider text-slate-400">SoC da Bateria</span>
+                    <span id="kpi-soc" class="text-3xl font-bold text-fuchsia-400 mt-2">-- %</span>
+                </div>
+                <!-- Hydrogen Level Card -->
+                <div class="glass-panel rounded-xl p-4 flex flex-col justify-between group hover:border-orange-500/30 transition-all duration-300">
+                    <span class="text-xs font-medium uppercase tracking-wider text-slate-400">Tanque de Hidrogênio</span>
+                    <span id="kpi-h2" class="text-3xl font-bold text-orange-400 mt-2">-- mm</span>
+                </div>
+            </section>
+
+            <!-- Charts Dashboard -->
+            <div class="grid grid-cols-12 gap-6">
+                <!-- Power Balance Graph -->
+                <div class="col-span-12 xl:col-span-8 glass-panel rounded-2xl p-5 flex flex-col relative">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-base font-semibold text-slate-200">🔌 Balanço de Potência</h3>
+                        <!-- Curve Toggles -->
+                        <div class="flex space-x-2 text-xs">
+                            <button onclick="toggleTrace(0)" id="t-wind" class="px-2.5 py-1 bg-sky-500/10 border border-sky-500/30 rounded text-sky-400 font-medium">Eólica</button>
+                            <button onclick="toggleTrace(1)" id="t-solar" class="px-2.5 py-1 bg-amber-500/10 border border-amber-500/30 rounded text-amber-400 font-medium">Solar</button>
+                            <button onclick="toggleTrace(2)" id="t-battery" class="px-2.5 py-1 bg-fuchsia-500/10 border border-fuchsia-500/30 rounded text-fuchsia-400 font-medium">Bateria</button>
+                            <button onclick="toggleTrace(3)" id="t-h2" class="px-2.5 py-1 bg-orange-500/10 border border-orange-500/30 rounded text-orange-400 font-medium">H2</button>
+                            <button onclick="toggleTrace(4)" id="t-total" class="px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/30 rounded text-emerald-400 font-medium">Total</button>
+                            <button onclick="toggleTrace(5)" id="t-demand" class="px-2.5 py-1 bg-white/10 border border-white/30 rounded text-slate-100 font-medium">Demanda</button>
+                        </div>
+                    </div>
+                    <div id="chart-power" class="w-full h-[400px]"></div>
+                </div>
+
+                <!-- Storage Level Over Time Chart -->
+                <div class="col-span-12 xl:col-span-4 glass-panel rounded-2xl p-5 flex flex-col">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-base font-semibold text-slate-200">📈 Níveis de Armazenamento</h3>
+                        <div class="flex space-x-2 text-xs">
+                            <button onclick="toggleStorageTrace(0)" id="t-soc" class="px-2.5 py-1 bg-fuchsia-500/10 border border-fuchsia-500/30 rounded text-fuchsia-400 font-medium">SoC</button>
+                            <button onclick="toggleStorageTrace(1)" id="t-h2level" class="px-2.5 py-1 bg-orange-500/10 border border-orange-500/30 rounded text-orange-400 font-medium">H2</button>
+                        </div>
+                    </div>
+                    <div id="chart-storage" class="w-full h-[400px]"></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Client Script -->
+    <script>
+        let ws;
+        let isConnecting = false;
+        let isMockConnected = false;
+        
+        // Modal functions
+        function closeSimulationModal() {
+            document.getElementById('simulation-modal').classList.add('hidden');
+        }
+
+        async function fetchAndDrawSimulationReport() {
+            try {
+                const response = await fetch('/api/simulation_history');
+                const data = await response.json();
+                const history = data.history;
+                
+                if (!history || history.length === 0) return;
+
+                const steps = history.map(r => r.Step);
+                
+                // Traces
+                const traces = [
+                    { x: steps, y: history.map(r => r.Ref_Sol), name: 'Ref Solar', mode: 'lines', line: { color: '#fbbf24', dash: 'dash' } },
+                    { x: steps, y: history.map(r => r.Pot_Solar_Real), name: 'Pot Solar Real', mode: 'lines', line: { color: '#f59e0b', width: 2 } },
+                    { x: steps, y: history.map(r => r.Ref_Vento), name: 'Ref Vento', mode: 'lines', line: { color: '#60a5fa', dash: 'dash' } },
+                    { x: steps, y: history.map(r => r.Pot_Vento_Real), name: 'Pot Vento Real', mode: 'lines', line: { color: '#3b82f6', width: 2 } },
+                    { x: steps, y: history.map(r => r.Demanda), name: 'Demanda', mode: 'lines', line: { color: '#ef4444', width: 2 } },
+                    { x: steps, y: history.map(r => r.Pc_Aplicado), name: 'Pc', mode: 'lines', line: { color: '#10b981' } },
+                    { x: steps, y: history.map(r => r.Pd_Aplicado), name: 'Pd', mode: 'lines', line: { color: '#8b5cf6' } },
+                    { x: steps, y: history.map(r => r.SoC), name: 'SoC %', mode: 'lines', yaxis: 'y2', line: { color: '#a78bfa', dash: 'dot' } },
+                    { x: steps, y: history.map(r => r.Tanque_H2), name: 'Tanque H2', mode: 'lines', yaxis: 'y2', line: { color: '#38bdf8', dash: 'dot' } }
+                ];
+
+                const layout = {
+                    paper_bgcolor: 'rgba(0,0,0,0)',
+                    plot_bgcolor: 'rgba(0,0,0,0)',
+                    font: { color: '#94a3b8' },
+                    margin: { t: 40, r: 40, l: 40, b: 40 },
+                    title: { text: "Dinâmica da Microrrede no Cenário" },
+                    hovermode: 'x unified',
+                    xaxis: { title: "Tempo (Passos)", showgrid: true, gridcolor: '#1e293b' },
+                    yaxis: { title: "Potência (W)", showgrid: true, gridcolor: '#1e293b' },
+                    yaxis2: { title: "Níveis (SoC% / Tanque)", overlaying: 'y', side: 'right', showgrid: false },
+                    legend: { orientation: 'h', y: -0.15 }
+                };
+
+                document.getElementById('simulation-modal').classList.remove('hidden');
+                Plotly.newPlot('static-plot', traces, layout, {responsive: true});
+                
+            } catch (err) {
+                console.error("Error fetching simulation report:", err);
+            }
+        }
+
+        // Global variables for WebSocket & History
+        let lastGraphUpdate = 0;
+        let startTime = null;
+        let manualStepCount = 0;
+        const maxHistoryLength = 600; // Holds 600 points (2 minutes rolling window at 5Hz)
+        
+        const history = {
+            time: [],
+            solar: [],
+            wind: [],
+            demand: [],
+            battery: [],
+            h2: [],
+            total_supply: [],
+            deviation: [],
+            soc: [],
+            h2_level: []
+        };
+
+        // Custom dark theme styling configuration for Plotly layout
+        const darkPlotLayout = {
+            plot_bgcolor: 'rgba(0,0,0,0)',
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            font: { family: 'Outfit, sans-serif', color: '#94A3B8' },
+            showlegend: false,
+            xaxis: {
+                showgrid: true,
+                gridcolor: 'rgba(255, 255, 255, 0.05)',
+                tickfont: { color: '#64748B' },
+                title: { text: 'Tempo Decorrido (Passos)', font: { size: 11, color: '#64748B' } }
+            },
+            yaxis: {
+                showgrid: true,
+                gridcolor: 'rgba(255, 255, 255, 0.05)',
+                tickfont: { color: '#64748B' },
+                title: { text: 'Potência (W)', font: { size: 11, color: '#64748B' } }
+            },
+            margin: { l: 45, r: 15, t: 15, b: 35 }
+        };
+
+        // Static References (Index 0, 1, 5) and Dynamic Traces (Index 2, 3, 4, 6)
+        const traceRefWind = { x: [], y: [], name: 'Ref Eólica', type: 'scatter', mode: 'lines', line: { color: '#56B4E9', width: 2, dash: 'dash', shape: 'spline' } };
+        const traceRefSolar = { x: [], y: [], name: 'Ref Solar', type: 'scatter', mode: 'lines', line: { color: '#E69F00', width: 2, dash: 'dash', shape: 'spline' } };
+        const traceRefDemand = { x: [], y: [], name: 'Ref Demanda', type: 'scatter', mode: 'lines', line: { color: '#FFFFFF', width: 2, dash: 'dash', shape: 'spline' } };
+        
+        const traceBattery = { x: [], y: [], name: 'Bateria', type: 'scatter', mode: 'lines', line: { color: '#CC79A7', width: 2.5, shape: 'spline' } };
+        const traceH2 = { x: [], y: [], name: 'H2 FC/El', type: 'scatter', mode: 'lines', line: { color: '#D55E00', width: 2.5, shape: 'spline' } };
+        const traceTotal = { x: [], y: [], name: 'Total Suprido', type: 'scatter', mode: 'lines', line: { color: '#009E73', width: 2, shape: 'spline' } };
+
+        Plotly.newPlot('chart-power', [traceRefWind, traceRefSolar, traceBattery, traceH2, traceTotal, traceRefDemand], darkPlotLayout, { responsive: true, displayModeBar: false });
+
+        // Storage Level Layout (Secondary plot)
+        const storageLayout = {
+            ...darkPlotLayout,
+            yaxis: {
+                ...darkPlotLayout.yaxis,
+                title: { text: 'SoC (%) / Nível H2 (mm)', font: { size: 11, color: '#64748B' } }
+            },
+            showlegend: false,
+            margin: { l: 45, r: 15, t: 15, b: 35 }
+        };
+
+        const traceSoC = { x: [], y: [], name: 'Carga Bateria SoC (%)', type: 'scatter', mode: 'lines', line: { color: '#CC79A7', width: 2.5, shape: 'spline' } };
+        const traceH2Level = { x: [], y: [], name: 'Nível H2 (mm)', type: 'scatter', mode: 'lines', line: { color: '#D55E00', width: 2.5, shape: 'spline' } };
+
+        Plotly.newPlot('chart-storage', [traceSoC, traceH2Level], storageLayout, { responsive: true, displayModeBar: false });
+
+        // Update plot traces visibility
+        const traceVisible = [true, true, true, true, true, true];
+        function toggleTrace(idx) {
+            traceVisible[idx] = !traceVisible[idx];
+            const update = { visible: traceVisible[idx] ? true : 'legendonly' };
+            Plotly.restyle('chart-power', update, [idx]);
+            
+            const buttons = ['t-wind', 't-solar', 't-battery', 't-h2', 't-total', 't-demand'];
+            const btn = document.getElementById(buttons[idx]);
+            if (traceVisible[idx]) {
+                btn.style.opacity = '1';
+                btn.style.borderWidth = '1px';
+            } else {
+                btn.style.opacity = '0.4';
+                btn.style.borderWidth = '1px';
+            }
+        }
+
+        const storageTraceVisible = [true, true];
+        function toggleStorageTrace(idx) {
+            storageTraceVisible[idx] = !storageTraceVisible[idx];
+            const update = { visible: storageTraceVisible[idx] ? true : 'legendonly' };
+            Plotly.restyle('chart-storage', update, [idx]);
+            
+            const buttons = ['t-soc', 't-h2level'];
+            const btn = document.getElementById(buttons[idx]);
+            if (storageTraceVisible[idx]) {
+                btn.style.opacity = '1';
+                btn.style.borderWidth = '1px';
+            } else {
+                btn.style.opacity = '0.4';
+                btn.style.borderWidth = '1px';
+            }
+        }
+
+        // Sidebar Toggle Logic
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar-panel');
+            const mainContent = document.getElementById('main-content-panel');
+            const toggleIcon = document.getElementById('toggle-sidebar-icon');
+            const toggleText = document.getElementById('toggle-sidebar-text');
+            
+            const isHidden = sidebar.classList.contains('hidden');
+            
+            if (isHidden) {
+                // Show sidebar
+                sidebar.classList.remove('hidden');
+                mainContent.classList.remove('lg:col-span-12');
+                mainContent.classList.add('lg:col-span-9');
+                toggleIcon.innerText = '◀';
+                toggleText.innerText = 'Ocultar Painel';
+                localStorage.setItem('sidebarCollapsed', 'false');
+            } else {
+                // Hide sidebar
+                sidebar.classList.add('hidden');
+                mainContent.classList.remove('lg:col-span-9');
+                mainContent.classList.add('lg:col-span-12');
+                toggleIcon.innerText = '▶';
+                toggleText.innerText = 'Mostrar Painel';
+                localStorage.setItem('sidebarCollapsed', 'true');
+            }
+            
+            setTimeout(() => {
+                Plotly.Plots.resize('chart-power');
+                Plotly.Plots.resize('chart-storage');
+            }, 100);
+        }
+
+        async function fetchStaticScenarioData() {
+            try {
+                if (isMockConnected) {
+                    const res = await fetch('/api/mock/data');
+                    const data = await res.json();
+                    const steps = Array.from({length: 1200}, (_, i) => i);
+                    
+                    Plotly.update('chart-power', {
+                        x: [steps, steps, steps, steps, steps, steps],
+                        y: [data.wind, data.solar, data.battery, data.h2, data.total, data.demand]
+                    }, {}, [0, 1, 2, 3, 4, 5]);
+
+                    Plotly.update('chart-storage', {
+                        x: [steps, steps],
+                        y: [data.soc, data.h2_level]
+                    }, {}, [0, 1]);
+                } else {
+                    // When disconnected or on physical HIL, clear charts to prevent preloading references
+                    Plotly.update('chart-power', { x: [[], [], [], [], [], []], y: [[], [], [], [], [], []] }, {}, [0, 1, 2, 3, 4, 5]);
+                    Plotly.update('chart-storage', { x: [[], []], y: [[], []] }, {}, [0, 1]);
+                }
+            } catch(e) {
+                console.error("Error fetching static profile data", e);
+            }
+        }
+
+        async function handleProfileSelection(type, value) {
+            if (value === '__upload__') {
+                pendingUploadType = type;
+                const select = document.getElementById(`sel-${type}`);
+                const prevValue = select.dataset.prev || select.options[0].value;
+                select.value = prevValue;
+                
+                document.getElementById('profile-file').click();
+            } else {
+                const select = document.getElementById(`sel-${type}`);
+                select.dataset.prev = value;
+                await selectProfile(type, value);
+                if (isMockConnected) {
+                    await fetchStaticScenarioData();
+                }
+            }
+        }
+
+        async function connectSerial() {
+            const port = document.getElementById('serial-port').value;
+            try {
+                const res = await fetch('/api/connect', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: `port=${port}`
+                });
+                const data = await res.json();
+                if (data.success) {
+                    isMockConnected = (port.toUpperCase() === 'MOCK' || port.toUpperCase() === 'MOCK_MODE');
+                    document.getElementById('btn-connect').disabled = true;
+                    document.getElementById('btn-disconnect').disabled = false;
+                    await fetchStatus();
+                    await fetchStaticScenarioData(); // refresh with mock data if mock
+                    await updateSettings();
+                } else {
+                    alert("Erro ao conectar: " + data.error);
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        }
+        async function disconnectSerial() {
+            try {
+                const res = await fetch('/api/disconnect', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    isMockConnected = false;
+                    document.getElementById('btn-connect').innerText = "CONECTAR";
+                    document.getElementById('btn-connect').disabled = false;
+                    document.getElementById('btn-disconnect').disabled = true;
+                    await fetchStatus();
+                    await fetchStaticScenarioData(); // revert to static references only
+                    await updateSettings();
+                    resetGraphHistory();
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        // Select Profile Selection API
+        async function selectProfile(type, value) {
+            const formData = new FormData();
+            formData.append('profile_type', type);
+            formData.append('value', value);
+            try {
+                await fetch('/api/profile/select', { method: 'POST', body: formData });
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        // Toggle loaded profile execution API
+        async function toggleProfile() {
+            const btn = document.getElementById('btn-profile-toggle');
+            if (btn.innerText === "INICIAR") {
+                // We are starting.
+                resetGraphHistory();
+                fetch('/api/profile/toggle', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'active=true'
+                });
+                btn.innerText = "PARAR";
+                btn.classList.replace('bg-indigo-600', 'bg-rose-600');
+                btn.classList.replace('hover:bg-indigo-500', 'hover:bg-rose-500');
+            } else {
+                // We are stopping
+                fetch('/api/profile/toggle', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'active=false'
+                }).then(() => {
+                    // After stopping, fetch and show report automatically
+                    fetchAndDrawSimulationReport();
+                });
+                btn.innerText = "INICIAR";
+                btn.classList.replace('bg-rose-600', 'bg-indigo-600');
+                btn.classList.replace('hover:bg-rose-500', 'hover:bg-indigo-500');
+            }
+        }
+
+        function resetGraphHistory() {
+            startTime = Date.now();
+            manualStepCount = 0;
+            // Clear all traces (0 to 5) so they start fresh
+            Plotly.update('chart-power', { x: [[], [], [], [], [], []], y: [[], [], [], [], [], []] }, {}, [0, 1, 2, 3, 4, 5]);
+            // Clear storage traces: 0 (SoC), 1 (H2 Level)
+            Plotly.update('chart-storage', { x: [[], []], y: [[], []] }, {}, [0, 1]);
+        }
+
+        // File Uploader Profile API
+        async function uploadProfile() {
+            const type = pendingUploadType;
+            const fileInput = document.getElementById('profile-file');
+            if (!type || fileInput.files.length === 0) return;
+
+            const file = fileInput.files[0];
+            const formData = new FormData();
+            formData.append('profile_type', type);
+            formData.append('file', file);
+
+            try {
+                const res = await fetch('/api/upload', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.success) {
+                    alert(`Perfil '${data.name}' carregado e selecionado.`);
+                    fileInput.value = '';
+                    await fetchStatus();
+                } else {
+                    alert("Falha no upload do perfil: " + data.error);
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        // Upload custom controller file
+        async function uploadController() {
+            const fileInput = document.getElementById('controller-file');
+            if (fileInput.files.length === 0) return;
+
+            const file = fileInput.files[0];
+            const formData = new FormData();
+            formData.append('file', file);
+
+            const statusLabel = document.getElementById('controller-upload-status');
+            statusLabel.innerText = "Enviando...";
+            statusLabel.className = "text-[10px] text-indigo-400 block mt-2 text-center";
+
+            try {
+                const res = await fetch('/api/controller/upload', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.success) {
+                    statusLabel.innerText = `Controlador '${data.filename}' carregado com sucesso.`;
+                    statusLabel.className = "text-[10px] text-emerald-400 block mt-2 text-center";
+                } else {
+                    statusLabel.innerText = "Erro: " + data.error;
+                    statusLabel.className = "text-[10px] text-red-400 block mt-2 text-center";
+                }
+            } catch (err) {
+                console.error(err);
+                statusLabel.innerText = "Erro na conexão.";
+                statusLabel.className = "text-[10px] text-red-400 block mt-2 text-center";
+            }
+        }
+
+        function updateMpcWeightsLabels() {
+            document.getElementById('val-q-soc').innerText = parseFloat(document.getElementById('slider-q-soc').value).toFixed(2);
+            document.getElementById('val-q-h2').innerText = parseFloat(document.getElementById('slider-q-h2').value).toFixed(2);
+            document.getElementById('val-q-load').innerText = parseFloat(document.getElementById('slider-q-load').value).toFixed(2);
+        }
+
+        // Update settings API
+        async function updateSettings() {
+            const mode = document.querySelector('input[name="mode"]:checked').value;
+            
+            // Show/Hide manual control panel
+            const manualPanel = document.getElementById('manual-panel');
+            if (mode === 'manual') {
+                manualPanel.classList.remove('hidden');
+            } else {
+                manualPanel.classList.add('hidden');
+            }
+
+            // Show/Hide custom controller panel
+            const customPanel = document.getElementById('custom-controller-panel');
+            if (mode === 'custom') {
+                customPanel.classList.remove('hidden');
+            } else {
+                customPanel.classList.add('hidden');
+            }
+
+            // Show/Hide MPC weights panel
+            const mpcPanel = document.getElementById('mpc-weights-panel');
+            if (mode === 'matlab_mpc') {
+                mpcPanel.classList.remove('hidden');
+            } else {
+                mpcPanel.classList.add('hidden');
+            }
+
+            // Disable profile execution if in manual mode or mock mode
+            const btnProfile = document.getElementById('btn-profile-toggle');
+            const lblScenario = document.getElementById('profile-scenario-label');
+            
+            // We only enable it if we are connected AND NOT in manual mode AND NOT mock
+            if (document.getElementById('status-text').innerText !== 'Desconectado') {
+                if (mode === 'manual' || isMockConnected) {
+                    btnProfile.disabled = true;
+                    btnProfile.classList.add('opacity-50', 'pointer-events-none');
+                    lblScenario.innerText = isMockConnected ? "Gráfico Estático (MOCK)" : "Desativado (Modo Manual)";
+                    lblScenario.classList.add('text-slate-500');
+                    lblScenario.classList.remove('text-slate-300');
+                    
+                    // Also turn it off if it was running
+                    if (btnProfile.innerText === "PARAR") {
+                        toggleProfile();
+                    }
+                } else {
+                    btnProfile.disabled = false;
+                    btnProfile.classList.remove('opacity-50', 'pointer-events-none');
+                    lblScenario.innerText = "Cenário 24h";
+                    lblScenario.classList.remove('text-slate-500');
+                    lblScenario.classList.add('text-slate-300');
+                }
+            } else {
+                btnProfile.disabled = true;
+                btnProfile.classList.add('opacity-50', 'pointer-events-none');
+                lblScenario.innerText = "Cenário 24h (Desconectado)";
+                lblScenario.classList.add('text-slate-500');
+                lblScenario.classList.remove('text-slate-300');
+            }
+
+            const Pc = parseFloat(document.getElementById('slider-bat').value);
+            const ref_sol = parseFloat(document.getElementById('slider-ref-sol').value);
+            const ref_vento = parseFloat(document.getElementById('slider-ref-vento').value);
+            const ucc = document.getElementById('toggle-fc').checked ? 1 : 0;
+            const uel = document.getElementById('toggle-ely').checked ? 1 : 0;
+
+            const Q_soc = parseFloat(document.getElementById('slider-q-soc').value);
+            const Q_h2 = parseFloat(document.getElementById('slider-q-h2').value);
+            const Q_load = parseFloat(document.getElementById('slider-q-load').value);
+
+            const formData = new FormData();
+            formData.append('controller', mode);
+            formData.append('Pc', Pc < 0 ? Math.abs(Pc) : 0);
+            formData.append('Pd', Pc > 0 ? Pc : 0);
+            formData.append('ucc', ucc);
+            formData.append('uel', uel);
+            formData.append('ref_sol', ref_sol);
+            formData.append('ref_vento', ref_vento);
+            formData.append('Q_soc', Q_soc);
+            formData.append('Q_h2', Q_h2);
+            formData.append('Q_load', Q_load);
+
+            try {
+                await fetch('/api/settings', { method: 'POST', body: formData });
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        function updateManualPowerLabel(val) {
+            const label = document.getElementById('val-bat');
+            const num = parseFloat(val);
+            if (num < 0) {
+                label.innerText = `${Math.abs(num)} W (Carga)`;
+                label.className = "font-mono text-indigo-400";
+            } else if (num > 0) {
+                label.innerText = `${num} W (Descarga)`;
+                label.className = "font-mono text-fuchsia-400";
+            } else {
+                label.innerText = `0 W`;
+                label.className = "font-mono text-slate-400";
+            }
+        }
+
+        // WebSocket setup for real-time telemetry
+        function initWebSocket() {
+            const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+            ws = new WebSocket(`${proto}://${window.location.host}/ws/telemetry`);
+
+            ws.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                
+                if (data.type === "simulation_complete") {
+                    // Profile has finished executing
+                    document.getElementById('btn-profile-toggle').innerText = "INICIAR";
+                    document.getElementById('btn-profile-toggle').classList.replace('bg-rose-600', 'bg-indigo-600');
+                    document.getElementById('btn-profile-toggle').classList.replace('hover:bg-rose-500', 'hover:bg-indigo-500');
+                    fetchAndDrawSimulationReport();
+                    return;
+                }
+                
+                if (data.type === "telemetry") {
+                    updateUI(data);
+                }
+            };
+
+            ws.onclose = function() {
+                console.log("[WebSocket] Disconnected. Reconnecting in 2 seconds...");
+                setTimeout(initWebSocket, 2000);
+            };
+
+            ws.onerror = function(err) {
+                console.error("[WebSocket] Error: ", err);
+            };
+        }
+
+        // Fetch status
+        async function fetchStatus() {
+            try {
+                const res = await fetch('/api/status');
+                const data = await res.json();
+                
+                const dot = document.getElementById('status-dot');
+                const badgeText = document.getElementById('status-text');
+                const btnConnect = document.getElementById('btn-connect');
+                const btnDisconnect = document.getElementById('btn-disconnect');
+                const btnProfile = document.getElementById('btn-profile-toggle');
+
+                const prevMockConnected = isMockConnected;
+                isMockConnected = data.connected && data.mock;
+
+                if (data.connected) {
+                    dot.className = "w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse glow-green";
+                    badgeText.innerText = data.mock ? "Simulador Online" : "Hardware Online (" + data.port + ")";
+                    btnConnect.innerText = "CONECTADO";
+                    btnConnect.disabled = true;
+                    btnDisconnect.disabled = false;
+                    
+                    if (isMockConnected && !prevMockConnected) {
+                        await fetchStaticScenarioData();
+                    }
+                    
+                    // Enable profile execution button ONLY if not manual and not mock
+                    if (data.controller !== 'manual' && !data.mock) {
+                        btnProfile.disabled = false;
+                        btnProfile.classList.remove('opacity-50', 'pointer-events-none');
+                        document.getElementById('profile-scenario-label').innerText = "Cenário 24h";
+                        document.getElementById('profile-scenario-label').classList.remove('text-slate-500');
+                        document.getElementById('profile-scenario-label').classList.add('text-slate-300');
+                    } else {
+                        btnProfile.disabled = true;
+                        btnProfile.classList.add('opacity-50', 'pointer-events-none');
+                        document.getElementById('profile-scenario-label').innerText = data.mock ? "Gráfico Estático (MOCK)" : "Desativado (Modo Manual)";
+                        document.getElementById('profile-scenario-label').classList.add('text-slate-500');
+                        document.getElementById('profile-scenario-label').classList.remove('text-slate-300');
+                    }
+                } else {
+                    dot.className = "w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse glow-red";
+                    badgeText.innerText = "Desconectado";
+                    btnConnect.innerText = "CONECTAR";
+                    btnConnect.disabled = false;
+                    btnDisconnect.disabled = true;
+                    
+                    // Disable profile execution button
+                    btnProfile.disabled = true;
+                    btnProfile.classList.add('opacity-50', 'pointer-events-none');
+                    btnProfile.innerText = "INICIAR";
+                    btnProfile.classList.remove('bg-red-600', 'hover:bg-red-500');
+                    
+                    // Reset KPIs
+                    document.getElementById('kpi-demand').innerText = "-- W";
+                    document.getElementById('kpi-gen').innerText = "-- W";
+                    document.getElementById('kpi-soc').innerText = "-- %";
+                    document.getElementById('kpi-h2').innerText = "-- %";
+                    document.getElementById('kpi-time').innerText = "0s";
+                }
+
+                updateDropdownOptions('sel-solar', data.available_profiles.solar, data.selections.solar);
+                updateDropdownOptions('sel-wind', data.available_profiles.wind, data.selections.wind);
+                updateDropdownOptions('sel-demand', data.available_profiles.demand, data.selections.demand);
+
+                // Sync UI
+                document.querySelector(`input[name="mode"][value="${data.controller}"]`).checked = true;
+                
+                const manualPanel = document.getElementById('manual-panel');
+                if (data.controller === 'manual') {
+                    manualPanel.classList.remove('hidden');
+                } else {
+                    manualPanel.classList.add('hidden');
+                }
+
+                const customPanel = document.getElementById('custom-controller-panel');
+                if (data.controller === 'custom') {
+                    customPanel.classList.remove('hidden');
+                } else {
+                    customPanel.classList.add('hidden');
+                }
+
+                const mpcPanel = document.getElementById('mpc-weights-panel');
+                if (data.controller === 'matlab_mpc') {
+                    mpcPanel.classList.remove('hidden');
+                } else {
+                    mpcPanel.classList.add('hidden');
+                }
+
+                if (data.profile_active) {
+                    btnProfile.innerText = "PARAR";
+                    btnProfile.classList.add('bg-red-600', 'hover:bg-red-500');
+                } else {
+                    btnProfile.innerText = "INICIAR";
+                    btnProfile.classList.remove('bg-red-600', 'hover:bg-red-500');
+                }
+
+                // Sync MPC weights
+                if (data.Q_soc !== undefined) {
+                    document.getElementById('slider-q-soc').value = data.Q_soc;
+                    document.getElementById('slider-q-h2').value = data.Q_h2;
+                    document.getElementById('slider-q-load').value = data.Q_load;
+                    updateMpcWeightsLabels();
+                }
+
+                // Sync Manual Controls
+                if (data.controller === 'manual' && data.manual_ref_sol !== undefined) {
+                    let batVal = 0;
+                    if (data.manual_Pd > 0) batVal = data.manual_Pd;
+                    else if (data.manual_Pc > 0) batVal = -data.manual_Pc;
+                    
+                    document.getElementById('slider-bat').value = batVal;
+                    updateManualPowerLabel(batVal);
+
+                    document.getElementById('toggle-fc').checked = (data.manual_ucc === 1);
+                    document.getElementById('toggle-ely').checked = (data.manual_uel === 1);
+
+                    document.getElementById('slider-ref-sol').value = data.manual_ref_sol;
+                    document.getElementById('val-ref-sol').innerText = parseFloat(data.manual_ref_sol).toFixed(2) + ' V';
+                    
+                    document.getElementById('slider-ref-vento').value = data.manual_ref_vento;
+                    document.getElementById('val-ref-vento').innerText = parseFloat(data.manual_ref_vento).toFixed(2) + ' V';
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        setInterval(fetchStatus, 1000);
+
+        function updateDropdownOptions(elementId, options, selectedValue) {
+            const select = document.getElementById(elementId);
+            select.innerHTML = '';
+            
+            options.forEach(opt => {
+                const option = document.createElement('option');
+                option.value = opt;
+                if (opt.startsWith('Custom:')) {
+                    option.innerText = opt;
+                } else {
+                    option.innerText = opt.charAt(0).toUpperCase() + opt.slice(1);
+                }
+                if (opt === selectedValue) {
+                    option.selected = true;
+                }
+                select.appendChild(option);
+            });
+            
+            // Add upload option
+            const uploadOpt = document.createElement('option');
+            uploadOpt.value = '__upload__';
+            uploadOpt.innerText = '➕ Adicionar novo...';
+            select.appendChild(uploadOpt);
+            
+            select.dataset.prev = selectedValue;
+        }
+
+        // Main UI updates
+        function updateUI(data) {
+            // Update KPIs
+            document.getElementById('kpi-gen').innerText = `${(data.Solar + data.Wind).toFixed(0)} W`;
+            document.getElementById('kpi-demand').innerText = `${data.Demand.toFixed(0)} W`;
+            document.getElementById('kpi-soc').innerText = `${data.SoC.toFixed(1)} %`;
+            document.getElementById('kpi-h2').innerText = `${data.H2_Level.toFixed(1)} mm`;
+
+            const statusText = document.getElementById('status-text');
+            const statusDot = document.getElementById('status-dot');
+            if (data.connected) {
+                statusText.innerText = "Conectado";
+                statusDot.className = "w-2.5 h-2.5 rounded-full bg-emerald-500 glow-green animate-none";
+            } else {
+                statusText.innerText = "Desconectado";
+                statusDot.className = "w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse glow-red";
+            }
+
+            if (data.profile_active) {
+                // Determine step X coordinate
+                const step = data.profile_index;
+                
+                // Update time KPI
+                document.getElementById('kpi-time').innerText = `${step} passos`;
+
+                // Extend ALL power traces dynamically (Wind, Solar, Bat, H2, Total, Demand)
+                Plotly.extendTraces('chart-power', {
+                    x: [[step], [step], [step], [step], [step], [step]],
+                    y: [[data.Wind], [data.Solar], [data.Battery], [data.H2], [data.Total_Supply], [data.Demand]]
+                }, [0, 1, 2, 3, 4, 5]);
+
+                Plotly.extendTraces('chart-storage', {
+                    x: [[step], [step]],
+                    y: [[data.SoC], [data.H2_Level]]
+                }, [0, 1]);
+                
+                manualStepCount = 0; // Reset manual step count while profile is active
+            } else if (data.connected) {
+                // Connected, but profile is not active (e.g. manual mode)
+                manualStepCount++;
+                document.getElementById('kpi-time').innerText = `${manualStepCount}s`;
+
+                // Use a rolling window of 300 points (about 1 minute of history)
+                const maxPoints = 300;
+                Plotly.extendTraces('chart-power', {
+                    x: [[manualStepCount], [manualStepCount], [manualStepCount], [manualStepCount], [manualStepCount], [manualStepCount]],
+                    y: [[data.Wind], [data.Solar], [data.Battery], [data.H2], [data.Total_Supply], [data.Demand]]
+                }, [0, 1, 2, 3, 4, 5], maxPoints);
+
+                Plotly.extendTraces('chart-storage', {
+                    x: [[manualStepCount], [manualStepCount]],
+                    y: [[data.SoC], [data.H2_Level]]
+                }, [0, 1], maxPoints);
+            }
+        }
+
+        // Initialize elements on load
+        window.onload = function() {
+            fetchStatus();
+            initWebSocket();
+            
+            // Restore sidebar collapse state
+            if (localStorage.getItem('sidebarCollapsed') === 'true') {
+                const sidebar = document.getElementById('sidebar-panel');
+                const mainContent = document.getElementById('main-content-panel');
+                const toggleIcon = document.getElementById('toggle-sidebar-icon');
+                const toggleText = document.getElementById('toggle-sidebar-text');
+                
+                sidebar.classList.add('hidden');
+                mainContent.classList.remove('lg:col-span-9');
+                mainContent.classList.add('lg:col-span-12');
+                toggleIcon.innerText = '▶';
+                toggleText.innerText = 'Mostrar Painel';
+            }
+        };
+    </script>
+</body>
+</html>

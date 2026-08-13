@@ -18,3 +18,15 @@ MGCC_microrrede/dados_microrrede*.mat
 
 # Ignore MATLAB AutoSave files
 *.asv
+
+# Material das Aulas de MPC
+Controle_Preditivo_Material/
+
+# Documentos e Analises de Emulacao
+Modelagem e analise de emulação de Microrrede real/
+
+# Latex Build Files and Output
+docs/*.aux
+docs/*.log
+docs/*.pdf
+docs/*.out
