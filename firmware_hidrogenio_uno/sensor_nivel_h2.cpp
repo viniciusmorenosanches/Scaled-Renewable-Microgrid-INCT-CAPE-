@@ -69,7 +69,7 @@ void inicializarSensorNivelH2() {
     sensor.init();
     sensor.configureDefault();
 
-    // Timeout curto para evitar travar o loop de controle de 100 ms.
+    // Timeout de 50 ms: garante margem para os 30 ms de medicao e NUNCA ultrapassa o loop de 100 ms
     sensor.setTimeout(50);
 
     // Reduz o tempo de medicao mantendo estabilidade aceitavel.
@@ -84,7 +84,7 @@ float lerNivelH2_mm() {
     if (leituraInvalida) {
         falhasConsecutivas++;
         if (falhasConsecutivas >= MAX_FALHAS_CONSECUTIVAS) {
-            return -1.0f;  // Sinaliza erro persistente para o caller
+            return -999.0f;  // Sinaliza erro persistente para o caller (sentinela < -500)
         }
         // Falha pontual: nao atualiza o filtro, retorna ultimo valor filtrado valido
     } else {
@@ -104,9 +104,7 @@ float lerNivelH2_mm() {
     }
 
     float nivel_mm = ALTURA_COPO_MM - distanciaFiltrada_mm;
-    if (nivel_mm < 0.0f) {
-        nivel_mm = 0.0f;
-    }
+    // Removido o clamp para zero para permitir "tara" na interface web
 
     return nivel_mm * FATOR_CALIBRACAO_NIVEL;
 }

@@ -116,7 +116,7 @@
                 </h3>
                 <div class="flex flex-col space-y-2">
                     <label class="text-xs text-slate-400 font-medium">Porta Serial</label>
-                    <input type="text" id="serial-port" value="COM9" class="w-full px-3 py-2 bg-slate-950/70 border border-slate-800 rounded-lg text-slate-100 font-mono text-sm focus:outline-none focus:border-indigo-500 transition-colors">
+                    <input type="text" id="serial-port" value="COM3" class="w-full px-3 py-2 bg-slate-950/70 border border-slate-800 rounded-lg text-slate-100 font-mono text-sm focus:outline-none focus:border-indigo-500 transition-colors">
                 </div>
                 <div class="grid grid-cols-2 gap-3">
                     <button id="btn-connect" onclick="connectSerial()" class="py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-semibold text-xs tracking-wider transition-colors">CONECTAR</button>
@@ -218,25 +218,25 @@
                     <div>
                         <div class="flex justify-between text-[11px] font-medium text-slate-400">
                             <span>Ref. Bateria (Q<sub>soc</sub>)</span>
-                            <span id="val-q-soc" class="font-mono text-indigo-400">0.5</span>
+                            <span id="val-q-soc" class="font-mono text-indigo-400">1.0</span>
                         </div>
-                        <input type="range" id="slider-q-soc" min="0.0" max="1.0" value="0.5" step="0.05" oninput="updateMpcWeightsLabels()" onchange="updateSettings()" class="w-full mt-1.5 accent-indigo-500">
+                        <input type="range" id="slider-q-soc" min="0.0" max="10.0" value="1.0" step="0.1" oninput="updateMpcWeightsLabels()" onchange="updateSettings()" class="w-full mt-1.5 accent-indigo-500">
                     </div>
 
                     <div>
                         <div class="flex justify-between text-[11px] font-medium text-slate-400">
                             <span>Ref. H<sub>2</sub> (Q<sub>h2</sub>)</span>
-                            <span id="val-q-h2" class="font-mono text-indigo-400">0.2</span>
+                            <span id="val-q-h2" class="font-mono text-indigo-400">1.0</span>
                         </div>
-                        <input type="range" id="slider-q-h2" min="0.0" max="1.0" value="0.2" step="0.05" oninput="updateMpcWeightsLabels()" onchange="updateSettings()" class="w-full mt-1.5 accent-indigo-500">
+                        <input type="range" id="slider-q-h2" min="0.0" max="10.0" value="1.0" step="0.1" oninput="updateMpcWeightsLabels()" onchange="updateSettings()" class="w-full mt-1.5 accent-indigo-500">
                     </div>
 
                     <div>
                         <div class="flex justify-between text-[11px] font-medium text-slate-400">
                             <span>Priorizar Demanda (Q<sub>load</sub>)</span>
-                            <span id="val-q-load" class="font-mono text-indigo-400">0.8</span>
+                            <span id="val-q-load" class="font-mono text-indigo-400">100.0</span>
                         </div>
-                        <input type="range" id="slider-q-load" min="0.0" max="1.0" value="0.8" step="0.05" oninput="updateMpcWeightsLabels()" onchange="updateSettings()" class="w-full mt-1.5 accent-indigo-500">
+                        <input type="range" id="slider-q-load" min="0.0" max="200.0" value="100.0" step="1.0" oninput="updateMpcWeightsLabels()" onchange="updateSettings()" class="w-full mt-1.5 accent-indigo-500">
                     </div>
                 </div>
 
@@ -324,9 +324,22 @@
                     <span id="kpi-soc" class="text-3xl font-bold text-fuchsia-400 mt-2">-- %</span>
                 </div>
                 <!-- Hydrogen Level Card -->
-                <div class="glass-panel rounded-xl p-4 flex flex-col justify-between group hover:border-orange-500/30 transition-all duration-300">
-                    <span class="text-xs font-medium uppercase tracking-wider text-slate-400">Tanque de Hidrogênio</span>
-                    <span id="kpi-h2" class="text-3xl font-bold text-orange-400 mt-2">-- mm</span>
+                <div class="glass-panel rounded-xl p-4 flex flex-col justify-between group hover:border-orange-500/30 transition-all duration-300 relative">
+                    <div class="flex justify-between items-center">
+                        <span class="text-xs font-medium uppercase tracking-wider text-slate-400">Tanque H<sub>2</sub></span>
+                        <button onclick="tareH2()" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded border border-white/10 transition-colors" title="Definir nível atual como zero (Tara)">Tara</button>
+                    </div>
+                    <div class="flex items-baseline justify-between mt-1">
+                        <span id="kpi-h2-pct" class="text-3xl font-bold text-orange-400">-- %</span>
+                        <span id="kpi-h2-mm" class="text-xs font-mono text-slate-400">-- mm</span>
+                    </div>
+                    <div class="flex items-center justify-between mt-2 pt-1 border-t border-slate-800/60 text-[10px] text-slate-400">
+                        <span>Máx (100%):</span>
+                        <div class="flex items-center gap-1">
+                            <input type="number" id="input-h2-max" value="47.0" step="1" min="1" max="200" onchange="updateH2Max(this.value)" class="w-12 px-1.5 py-0.5 bg-slate-950 border border-slate-700 rounded text-center text-[10px] font-mono text-slate-200 focus:outline-none focus:border-orange-500">
+                            <span>mm</span>
+                        </div>
+                    </div>
                 </div>
             </section>
 
@@ -354,8 +367,8 @@
                     <div class="flex justify-between items-center mb-4">
                         <h3 class="text-base font-semibold text-slate-200">📈 Níveis de Armazenamento</h3>
                         <div class="flex space-x-2 text-xs">
-                            <button onclick="toggleStorageTrace(0)" id="t-soc" class="px-2.5 py-1 bg-fuchsia-500/10 border border-fuchsia-500/30 rounded text-fuchsia-400 font-medium">SoC</button>
-                            <button onclick="toggleStorageTrace(1)" id="t-h2level" class="px-2.5 py-1 bg-orange-500/10 border border-orange-500/30 rounded text-orange-400 font-medium">H2</button>
+                            <button onclick="toggleStorageTrace(0)" id="t-soc" class="px-2.5 py-1 bg-fuchsia-500/10 border border-fuchsia-500/30 rounded text-fuchsia-400 font-medium">Bateria (%)</button>
+                            <button onclick="toggleStorageTrace(1)" id="t-h2level" class="px-2.5 py-1 bg-orange-500/10 border border-orange-500/30 rounded text-orange-400 font-medium">Tanque H2 (%)</button>
                         </div>
                     </div>
                     <div id="chart-storage" class="w-full h-[400px]"></div>
@@ -394,8 +407,8 @@
                     { x: steps, y: history.map(r => r.Demanda), name: 'Demanda', mode: 'lines', line: { color: '#ef4444', width: 2 } },
                     { x: steps, y: history.map(r => r.Pc_Aplicado), name: 'Pc', mode: 'lines', line: { color: '#10b981' } },
                     { x: steps, y: history.map(r => r.Pd_Aplicado), name: 'Pd', mode: 'lines', line: { color: '#8b5cf6' } },
-                    { x: steps, y: history.map(r => r.SoC), name: 'SoC %', mode: 'lines', yaxis: 'y2', line: { color: '#a78bfa', dash: 'dot' } },
-                    { x: steps, y: history.map(r => r.Tanque_H2), name: 'Tanque H2', mode: 'lines', yaxis: 'y2', line: { color: '#38bdf8', dash: 'dot' } }
+                    { x: steps, y: history.map(r => r.SoC), name: 'SoC (%)', mode: 'lines', yaxis: 'y2', line: { color: '#a78bfa', dash: 'dot' } },
+                    { x: steps, y: history.map(r => r.Tanque_H2_Pct !== undefined ? r.Tanque_H2_Pct : r.Tanque_H2), name: 'Tanque H2 (%)', mode: 'lines', yaxis: 'y2', line: { color: '#38bdf8', dash: 'dot' } }
                 ];
 
                 const layout = {
@@ -407,7 +420,7 @@
                     hovermode: 'x unified',
                     xaxis: { title: "Tempo (Passos)", showgrid: true, gridcolor: '#1e293b' },
                     yaxis: { title: "Potência (W)", showgrid: true, gridcolor: '#1e293b' },
-                    yaxis2: { title: "Níveis (SoC% / Tanque)", overlaying: 'y', side: 'right', showgrid: false },
+                    yaxis2: { title: "Níveis de Armazenamento (%)", overlaying: 'y', side: 'right', range: [0, 105], showgrid: false },
                     legend: { orientation: 'h', y: -0.15 }
                 };
 
@@ -470,19 +483,20 @@
 
         Plotly.newPlot('chart-power', [traceRefWind, traceRefSolar, traceBattery, traceH2, traceTotal, traceRefDemand], darkPlotLayout, { responsive: true, displayModeBar: false });
 
-        // Storage Level Layout (Secondary plot)
+        // Storage Level Layout (Secondary plot: Normalized 0-100%)
         const storageLayout = {
             ...darkPlotLayout,
             yaxis: {
                 ...darkPlotLayout.yaxis,
-                title: { text: 'SoC (%) / Nível H2 (mm)', font: { size: 11, color: '#64748B' } }
+                title: { text: 'Nível de Armazenamento (%)', font: { size: 11, color: '#64748B' } },
+                range: [0, 105]
             },
             showlegend: false,
             margin: { l: 45, r: 15, t: 15, b: 35 }
         };
 
-        const traceSoC = { x: [], y: [], name: 'Carga Bateria SoC (%)', type: 'scatter', mode: 'lines', line: { color: '#CC79A7', width: 2.5, shape: 'spline' } };
-        const traceH2Level = { x: [], y: [], name: 'Nível H2 (mm)', type: 'scatter', mode: 'lines', line: { color: '#D55E00', width: 2.5, shape: 'spline' } };
+        const traceSoC = { x: [], y: [], name: 'Bateria SoC (%)', type: 'scatter', mode: 'lines', line: { color: '#CC79A7', width: 2.5, shape: 'spline' } };
+        const traceH2Level = { x: [], y: [], name: 'Tanque H2 (%)', type: 'scatter', mode: 'lines', line: { color: '#D55E00', width: 2.5, shape: 'spline' } };
 
         Plotly.newPlot('chart-storage', [traceSoC, traceH2Level], storageLayout, { responsive: true, displayModeBar: false });
 
@@ -595,6 +609,38 @@
                 if (isMockConnected) {
                     await fetchStaticScenarioData();
                 }
+            }
+        }
+
+        async function tareH2() {
+            try {
+                await fetch('/api/tare_h2', { method: 'POST' });
+            } catch (err) {
+                console.error('Error taring H2:', err);
+            }
+        }
+
+        async function updateH2Max(val) {
+            const maxVal = parseFloat(val);
+            if (isNaN(maxVal) || maxVal <= 0) return;
+            const formData = new FormData();
+            formData.append('max_mm', maxVal);
+            try {
+                await fetch('/api/set_h2_max', { method: 'POST', body: formData });
+            } catch (err) {
+                console.error('Error updating H2 max:', err);
+            }
+        }
+
+        async function setH2MaxCurrent() {
+            try {
+                const res = await fetch('/api/set_h2_max', { method: 'POST' });
+                const data = await res.json();
+                if (data.success && data.max_mm) {
+                    document.getElementById('input-h2-max').value = parseFloat(data.max_mm).toFixed(1);
+                }
+            } catch (err) {
+                console.error('Error setting current H2 as max:', err);
             }
         }
 
@@ -748,9 +794,9 @@
         }
 
         function updateMpcWeightsLabels() {
-            document.getElementById('val-q-soc').innerText = parseFloat(document.getElementById('slider-q-soc').value).toFixed(2);
-            document.getElementById('val-q-h2').innerText = parseFloat(document.getElementById('slider-q-h2').value).toFixed(2);
-            document.getElementById('val-q-load').innerText = parseFloat(document.getElementById('slider-q-load').value).toFixed(2);
+            document.getElementById('val-q-soc').innerText = parseFloat(document.getElementById('slider-q-soc').value).toFixed(1);
+            document.getElementById('val-q-h2').innerText = parseFloat(document.getElementById('slider-q-h2').value).toFixed(1);
+            document.getElementById('val-q-load').innerText = parseFloat(document.getElementById('slider-q-load').value).toFixed(1);
         }
 
         // Update settings API
@@ -986,6 +1032,10 @@
                     btnProfile.classList.remove('bg-red-600', 'hover:bg-red-500');
                 }
 
+                if (data.h2_max_mm !== undefined) {
+                    document.getElementById('input-h2-max').value = parseFloat(data.h2_max_mm).toFixed(1);
+                }
+
                 // Sync MPC weights
                 if (data.Q_soc !== undefined) {
                     document.getElementById('slider-q-soc').value = data.Q_soc;
@@ -1052,7 +1102,11 @@
             document.getElementById('kpi-gen').innerText = `${(data.Solar + data.Wind).toFixed(0)} W`;
             document.getElementById('kpi-demand').innerText = `${data.Demand.toFixed(0)} W`;
             document.getElementById('kpi-soc').innerText = `${data.SoC.toFixed(1)} %`;
-            document.getElementById('kpi-h2').innerText = `${data.H2_Level.toFixed(1)} mm`;
+            
+            const h2Pct = data.H2_Pct !== undefined ? data.H2_Pct : (data.H2_Level / 47.0 * 100);
+            const h2Max = data.H2_Max_mm !== undefined ? data.H2_Max_mm : 47.0;
+            document.getElementById('kpi-h2-pct').innerText = `${h2Pct.toFixed(1)} %`;
+            document.getElementById('kpi-h2-mm').innerText = `${data.H2_Level.toFixed(1)} / ${h2Max.toFixed(0)} mm`;
 
             const statusText = document.getElementById('status-text');
             const statusDot = document.getElementById('status-dot');
@@ -1079,7 +1133,7 @@
 
                 Plotly.extendTraces('chart-storage', {
                     x: [[step], [step]],
-                    y: [[data.SoC], [data.H2_Level]]
+                    y: [[data.SoC], [h2Pct]]
                 }, [0, 1]);
                 
                 manualStepCount = 0; // Reset manual step count while profile is active
@@ -1097,7 +1151,7 @@
 
                 Plotly.extendTraces('chart-storage', {
                     x: [[manualStepCount], [manualStepCount]],
-                    y: [[data.SoC], [data.H2_Level]]
+                    y: [[data.SoC], [h2Pct]]
                 }, [0, 1], maxPoints);
             }
         }

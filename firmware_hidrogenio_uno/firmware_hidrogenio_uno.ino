@@ -162,11 +162,11 @@ float lerPotenciaCelula_W() {
 void atualizarMedicoes() {
     float leituraNivel_mm = lerNivelH2_mm();
 
-    if (leituraNivel_mm >= 0.0f) {
+    if (leituraNivel_mm > -500.0f) {
         nivelH2_mm             = leituraNivel_mm;
         ultimoNivelH2Valido_mm = leituraNivel_mm;
     } else {
-        // Falha persistente: usa o ultimo valor valido
+        // Falha persistente (retornou -999.0f): usa o ultimo valor valido
         nivelH2_mm = ultimoNivelH2Valido_mm;
     }
 

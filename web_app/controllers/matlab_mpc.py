@@ -12,9 +12,9 @@ from .base import BaseController
 class MatlabMpcController(BaseController):
     def __init__(self, matlab_dir: str = None):
         self.eng = None
-        self.Q_soc = 0.5
-        self.Q_h2 = 0.2
-        self.Q_load = 0.8
+        self.Q_soc = 1.0
+        self.Q_h2 = 1.0
+        self.Q_load = 100.0
         
         # Find the MGCC_microrrede directory in the repository
         if not matlab_dir:
@@ -101,7 +101,7 @@ class MatlabMpcController(BaseController):
             self.eng.eval("mpc = init_mpc_Tracking_cost(mpc, diag(Qe_weights));", nargout=0)
             self.eng.eval("x_prev = [soc_val; h2_val; pot_total_val];", nargout=0)
             self.eng.eval("d = [pot_wind; pot_solar];", nargout=0)
-            self.eng.eval("xref = [0.6; 0.3; demand_val / 1000.0];", nargout=0) # 60% SoC ref, 3.0mm H2 ref
+            self.eng.eval("xref = [0.6; 1.2; demand_val / 1000.0];", nargout=0) # 60% SoC ref, 12mm (1.2 norm) H2 ref
 
             # Solve MPC step
             self.eng.eval("mpc = update_mpc_Aeq(mpc, mpc.Aeq0, Bd0);", nargout=0)

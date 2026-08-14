@@ -1,32 +1,28 @@
 # Ignore temporary scratch/development analysis scripts
 scratch/
 
-# Ignore Python caching and local virtual environments
+# Ignore documentation, legacy code, and debug tests
+docs/
+legacy/
+Testes/
+
+# Ignore course materials and modeling PDF analysis
+Controle_Preditivo_Material/
+Modelagem e analise de emulação de Microrrede real/
+
+# Ignore Python caching, logs, and local virtual environments
 __pycache__/
 *.pyc
 .env
 .venv/
+web_app/serial_rx.log
 
-# Ignore Python web app (as requested to not upload Python yet)
-web_app/
+# Ignore VSCode and PlatformIO local build folders
+.vscode/
+.pio/
 
-# Ignore old/legacy Streamlit interface files
-app_interface_old/
-
-# Ignore MATLAB simulation output data files (to prevent cluttering Git with huge mat files)
+# Ignore MATLAB simulation output data files
 MGCC_microrrede/dados_microrrede*.mat
 
 # Ignore MATLAB AutoSave files
 *.asv
-
-# Material das Aulas de MPC
-Controle_Preditivo_Material/
-
-# Documentos e Analises de Emulacao
-Modelagem e analise de emulação de Microrrede real/
-
-# Latex Build Files and Output
-docs/*.aux
-docs/*.log
-docs/*.pdf
-docs/*.out

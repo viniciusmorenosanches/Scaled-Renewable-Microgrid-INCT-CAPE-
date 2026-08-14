@@ -31,7 +31,7 @@ warning('off', 'MATLAB:nearlySingularMatrix');
 %  CONFIGURAÇÃO — editar aqui antes de rodar
 % =========================================================================
 
-COM_PORT = "COM9";   % porta serial do Arduino R4 (verificar no Gerenciador de Dispositivos)
+COM_PORT = "COM4";   % porta serial do Arduino R4 (verificar no Gerenciador de Dispositivos)
 
 % Inicializa o MPC (carrega: mpc, x0, u_prev, Bd0, n_rho, Ts, kcc, kel, ...)
 microgrid_init_w_demand

@@ -60,17 +60,59 @@ latest_sensors = {
     "Pc_actual": 0.0,
     "Pd_actual": 0.0
 }
+h2_tare_offset = 0.0
+h2_max_mm = 47.0
 
 import random
+import scipy.io as sio
 
-# Generate standard residential demand profile (calculated mathematically)
+# Path to MGCC_microrrede folder
+mgcc_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "MGCC_microrrede")
+
+# 1. Load Wind references from referenciaVento.csv (2400 points, 0.0V - 4.37V)
+wind_csv_path = os.path.join(mgcc_folder, "referenciaVento.csv")
+profiles_db["wind"]["bancada_24h"] = []
+if os.path.exists(wind_csv_path):
+    try:
+        with open(wind_csv_path, "r", encoding="utf-8") as f:
+            for line in f:
+                for x in line.strip().split(","):
+                    if x.strip():
+                        profiles_db["wind"]["bancada_24h"].append(round(float(x.strip()), 3))
+    except Exception as e:
+        print(f"[Profiles] Error loading wind CSV: {e}")
+
+# 2. Load Solar references from referenciaSol.csv (2400 points, 0.0V - 1.40V)
+sol_csv_path = os.path.join(mgcc_folder, "referenciaSol.csv")
+profiles_db["solar"]["bancada_24h"] = []
+if os.path.exists(sol_csv_path):
+    try:
+        with open(sol_csv_path, "r", encoding="utf-8") as f:
+            for line in f:
+                for x in line.strip().split(","):
+                    if x.strip():
+                        profiles_db["solar"]["bancada_24h"].append(round(float(x.strip()), 3))
+    except Exception as e:
+        print(f"[Profiles] Error loading solar CSV: {e}")
+
+# 3. Load Demand from dados_cenario_24h_reformulado.mat (2400 points in W)
+mat_path = os.path.join(mgcc_folder, "dados_cenario_24h_reformulado.mat")
+profiles_db["demand"]["bancada_24h"] = []
+if os.path.exists(mat_path):
+    try:
+        mat_data = sio.loadmat(mat_path)
+        if "demanda" in mat_data:
+            profiles_db["demand"]["bancada_24h"] = [round(float(x), 1) for x in mat_data["demanda"].flatten()]
+    except Exception as e:
+        print(f"[Profiles] Error loading demand .mat: {e}")
+
+# Generate alternative synthetic profiles for fallback/testing
 profiles_db["demand"]["residencial"] = []
 for i in range(1200):
     t_hour = (i / 1200.0) * 24.0
     val = 80.0 + 100.0 * math.exp(-((t_hour - 8.0)**2)/2.0) + 150.0 * math.exp(-((t_hour - 19.0)**2)/4.0)
     profiles_db["demand"]["residencial"].append(round(val, 1))
 
-# Generate solar profile (calculated mathematically to match old app's 200W peak)
 profiles_db["solar"]["ensolarado"] = []
 profiles_db["solar"]["nublado"] = []
 for i in range(1200):
@@ -82,16 +124,20 @@ for i in range(1200):
     profiles_db["solar"]["ensolarado"].append(round(val, 3))
     profiles_db["solar"]["nublado"].append(round(val * 0.4, 3))
 
-# Generate wind profile (calculated mathematically to match old app's shape)
 profiles_db["wind"]["normal"] = []
 profiles_db["wind"]["ventania"] = []
 for i in range(1200):
     t_hour = (i / 1200.0) * 24.0
-    speed = 5.0 + 3.0 * math.sin(t_hour * 1.5) + random.gauss(0, 0.5)
-    speed = max(0.0, speed)
+    speed = 2.0 + 1.5 * math.sin(t_hour * 1.5)
+    speed = max(0.0, min(4.3, speed))
     profiles_db["wind"]["normal"].append(round(speed, 2))
-    profiles_db["wind"]["ventania"].append(round(speed * 1.5, 2))
+    profiles_db["wind"]["ventania"].append(round(min(4.3, speed * 1.3), 2))
 
+active_profile_selection = {
+    "solar": "bancada_24h" if profiles_db["solar"]["bancada_24h"] else "ensolarado",
+    "wind": "bancada_24h" if profiles_db["wind"]["bancada_24h"] else "normal",
+    "demand": "bancada_24h" if profiles_db["demand"]["bancada_24h"] else "residencial"
+}
 
 # New Global Simulation History Buffer
 simulation_history = []
@@ -131,6 +177,25 @@ def api_disconnect():
     serial_link.desconectar()
     return {"success": True}
 
+@app.post("/api/tare_h2")
+def api_tare_h2():
+    global h2_tare_offset
+    h2_tare_offset = latest_sensors["H2_Level"]
+    print(f"[Server] H2 Tared. New offset: {h2_tare_offset}")
+    return {"success": True, "offset": h2_tare_offset}
+
+@app.post("/api/set_h2_max")
+def api_set_h2_max(max_mm: float = Form(None)):
+    global h2_max_mm
+    if max_mm is not None and max_mm > 0:
+        h2_max_mm = max_mm
+    else:
+        curr_mm = latest_sensors["H2_Level"] - h2_tare_offset
+        if curr_mm > 0:
+            h2_max_mm = curr_mm
+    print(f"[Server] H2 Max Set. New max_mm: {h2_max_mm}")
+    return {"success": True, "max_mm": h2_max_mm}
+
 @app.get("/api/status")
 def api_status():
     mpc_ctrl = controllers["matlab_mpc"]
@@ -152,6 +217,8 @@ def api_status():
         "manual_uel": manual_ctrl.uel,
         "manual_ref_sol": manual_ctrl.ref_sol,
         "manual_ref_vento": manual_ctrl.ref_vento,
+        "h2_tare_offset": h2_tare_offset,
+        "h2_max_mm": h2_max_mm,
         "available_profiles": {
             "solar": list(profiles_db["solar"].keys()),
             "wind": list(profiles_db["wind"].keys()),
@@ -168,9 +235,9 @@ def api_settings(
     uel: int = Form(0),
     ref_sol: float = Form(0.0),
     ref_vento: float = Form(0.0),
-    Q_soc: float = Form(0.5),
-    Q_h2: float = Form(0.2),
-    Q_load: float = Form(0.8)
+    Q_soc: float = Form(1.0),
+    Q_h2: float = Form(1.0),
+    Q_load: float = Form(100.0)
 ):
     global active_controller_key
     if controller in controllers:
@@ -399,6 +466,19 @@ async def websocket_endpoint(websocket: WebSocket):
                 latest_sensors["Pot_total"] = 0.0
             
             sensors = latest_sensors.copy()
+            # Apply H2 Tare Offset and calculate 0-100%
+            raw_h2 = sensors["H2_Level"]
+            h2_mm = raw_h2 - h2_tare_offset
+            sensors["H2_Level"] = h2_mm
+            
+            h2_pct = (h2_mm / h2_max_mm * 100.0) if h2_max_mm > 0 else 0.0
+            h2_pct = max(0.0, min(100.0, h2_pct))
+            
+            # Normalize battery SoC (0-100%)
+            raw_soc = float(sensors.get("SoC", 0.0))
+            soc_pct = (raw_soc * 100.0) if raw_soc <= 1.05 else raw_soc
+            soc_pct = max(0.0, min(100.0, soc_pct))
+            sensors["SoC"] = soc_pct
 
             # 2. Extract active profiles references
             active_sol_key = active_profile_selection["solar"]
@@ -484,8 +564,10 @@ async def websocket_endpoint(websocket: WebSocket):
                 "H2": round(h2_contrib, 1),
                 "Total_Supply": round(total_supplied, 1),
                 "Deviation": round(deviation, 1),
-                "SoC": round(sensors["SoC"], 1),
-                "H2_Level": round(sensors["H2_Level"], 2),
+                "SoC": round(soc_pct, 1),
+                "H2_Level": round(h2_mm, 2),
+                "H2_Pct": round(h2_pct, 1),
+                "H2_Max_mm": round(h2_max_mm, 1),
                 "Pc_actual": round(sensors["Pc_actual"], 1),
                 "Pd_actual": round(sensors["Pd_actual"], 1),
                 "controller": active_controller_key,
@@ -502,8 +584,9 @@ async def websocket_endpoint(websocket: WebSocket):
                     "Demanda": demand_val,
                     "Pot_Solar_Real": sensors["Pot_pv"],
                     "Pot_Vento_Real": sensors["Pot_wt"],
-                    "SoC": sensors["SoC"],
-                    "Tanque_H2": sensors["H2_Level"],
+                    "SoC": soc_pct,
+                    "Tanque_H2_mm": round(h2_mm, 2),
+                    "Tanque_H2_Pct": round(h2_pct, 1),
                     "Pc_Aplicado": controls["Pc"],
                     "Pd_Aplicado": controls["Pd"],
                     "Ucc": controls["ucc"],

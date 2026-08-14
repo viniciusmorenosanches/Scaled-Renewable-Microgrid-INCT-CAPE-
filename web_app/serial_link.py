@@ -20,6 +20,7 @@ class MicrogridSerialLink:
         # Thread-safe queues
         self.sensor_data_queue = Queue(maxsize=1)
         self.control_data_queue = Queue(maxsize=1)
+        self.last_controls = {"Pc": 0.0, "Pd": 0.0, "ucc": 0, "uel": 0, "ref_sol": 0.0, "ref_vento": 0.0}
         
         # Mock variables (for simulation without physical board)
         self.mock_soc = 60.0       # battery %
@@ -70,11 +71,12 @@ class MicrogridSerialLink:
         """Persistent thread loop communicating with the physical Arduino Central."""
         while self.running:
             try:
-                # 1. Get latest controls from main loop (or defaults if empty)
+                # 1. Get latest controls from main loop (or last sent if empty)
                 try:
                     controls = self.control_data_queue.get_nowait()
+                    self.last_controls = controls
                 except Empty:
-                    controls = {"Pc": 0.0, "Pd": 0.0, "ucc": 0, "uel": 0, "ref_sol": 0.0, "ref_vento": 0.0}
+                    controls = self.last_controls
 
                 # 2. Format command string for Arduino
                 cmd_string = f"{controls['Pc']:.1f},{controls['Pd']:.1f},{controls['ucc']},{controls['uel']},{controls['ref_sol']:.1f},{controls['ref_vento']:.1f}\n"
