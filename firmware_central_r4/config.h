@@ -31,7 +31,7 @@
 
 const float         TS_SEGUNDOS          = 0.1f;    // Periodo de controle [s]
 const unsigned long PERIODO_CONTROLE_MS  = 100;     // Periodo de controle [ms]
-const unsigned long TIMEOUT_WATCHDOG_MS  = 10000;   // Sem pacote do MATLAB -> zera comandos [ms]
+const unsigned long TIMEOUT_WATCHDOG_MS  = 2000;    // Sem pacote do MATLAB -> zera comandos [ms]
 
 // ---------------------------------------------------------------------------
 // Baud rates

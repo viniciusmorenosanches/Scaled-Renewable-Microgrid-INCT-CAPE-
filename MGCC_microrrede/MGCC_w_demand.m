@@ -63,6 +63,15 @@ s = serialport(COM_PORT, 115200);
 configureTerminator(s, "LF");
 disp("Conectado ao Arduino na porta " + COM_PORT);
 
+% Garante o desligamento imediato e seguro de todos os atuadores (turbina, painel, H2)
+% caso o script seja interrompido (Ctrl+C), a janela fechada ou ocorra erro
+cleanupObj = onCleanup(@() shutdown_microgrid(s));
+
+% Aguarda o Arduino R4 inicializar após o auto-reset da porta serial (~2 s)
+disp("Aguardando inicialização do Arduino R4...");
+pause(2.0);
+flush(s);
+
 % =========================================================================
 %  Preparação da figura de monitoramento em tempo real
 % =========================================================================
@@ -349,8 +358,25 @@ save('dados_microrrede_test.mat', ...
      'dat_pot_carga', 'dat_pot_descarga');
 disp("Dados salvos.");
 
+% Envia comando seguro de parada para zerar turbina, painel e H2 antes de fechar a porta
+shutdown_microgrid(s);
 clear s;
 disp("Comunicação serial encerrada.");
 
 %% Gráficos finais
 plotar_resultados_mgcc('dados_microrrede_test.mat', SoC_ref, ref_h2, N_pts);
+
+% =========================================================================
+%  Função Auxiliar de Desligamento Seguro
+% =========================================================================
+function shutdown_microgrid(serialPort)
+    if isvalid(serialPort)
+        try
+            % Envia zeros para todos os comandos: Pc=0, Pd=0, ucc=0, uel=0, ref_sol=0, ref_vento=0
+            writeline(serialPort, "0.00,0.00,0,0,0.00,0.00");
+            pause(0.08);
+            disp(">> [SEGURANÇA] Comandos zerados e atuadores desligados com sucesso.");
+        catch
+        end
+    end
+end

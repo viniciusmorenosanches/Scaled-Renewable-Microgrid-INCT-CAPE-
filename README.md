@@ -69,6 +69,7 @@ Instalar via **Ferramentas → Gerenciar Bibliotecas**:
 | `SerialTransfer` (PowerBroker2) | `firmware_central_r4`, `firmware_hidrogenio_uno` |
 | `MatrixMath` (Tom Roberts) | `firmware_painel_solar`, `firmware_turbina_eolica` |
 | `VL6180X` (Pololu) | `firmware_hidrogenio_uno` |
+| `Adafruit_INA219` (Adafruit) | `firmware_hidrogenio_uno` |
 | `Servo` (built-in) | `firmware_turbina_eolica`, `firmware_hidrogenio_uno` |
 | `Wire` (built-in) | todos |
 

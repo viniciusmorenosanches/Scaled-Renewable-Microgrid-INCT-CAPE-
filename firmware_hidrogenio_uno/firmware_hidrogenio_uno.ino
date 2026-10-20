@@ -19,6 +19,7 @@
 
 #include <Servo.h>
 #include <Wire.h>
+#include <Adafruit_INA219.h>
 
 #include "comunicacao.h"
 #include "pacotes.h"
@@ -45,22 +46,19 @@ const int ANGULO_CELULA_FECHADA   = 180; // Posicao do servo com valvula fechada
 const int ANGULO_CELULA_ABERTA    = 0;   // Posicao do servo com valvula aberta [graus]
 
 // ---------------------------------------------------------------------------
-// Medicao da celula combustivel
+// Medicao da celula combustivel (Sensor digital INA219 via I2C)
 //
-// A tensao e medida sobre um resistor fisico ligado na saida da celula.
-// O resistor foi medido em bancada: RESISTENCIA_CARGA_OHM = 11.7 ohms.
+// O INA219 (endereco padrao 0x40) mede a tensao de barramento (V_bus) e a
+// queda no shunt de 0.1 ohm (I_shunt) por sensoriamento high-side diferencial.
 //
-// Calculo de potencia:
-//   I = V / R     (lei de Ohm)
-//   P = V * I = V^2 / R
+// Calculo de potencia real:
+//   P = V_bus * I_shunt [W]
 //
-// Para recalibrar: medir o resistor com multimetro e atualizar a constante.
+// Funciona com qualquer carga dinamica conectada a celula (LED, ventilador, etc).
 // ---------------------------------------------------------------------------
 
-const int   PINO_TENSAO_CELULA     = A0;     // Entrada analogica da tensao da celula
-const float RESISTENCIA_CARGA_OHM  = 11.7f;  // Resistor medido em bancada [ohm]
-const float TENSAO_ADC_V           = 5.0f;
-const float ADC_MAX                = 1023.0f;
+Adafruit_INA219 ina219;
+bool ina219Disponivel = false;
 
 // ---------------------------------------------------------------------------
 // Comunicacao SerialTransfer
@@ -83,7 +81,9 @@ uint8_t comandoEletrolisador = 0;  // uel: 1 = liga o eletrolisador
 
 float nivelH2_mm             = 0.0f;
 float ultimoNivelH2Valido_mm = 0.0f;  // Cache do ultimo valor valido (evita enviar -1.0 ao R4)
-float potenciaCelula_W       = 0.0f;
+float tensaoCelula_V         = 0.0f;  // Tensao de barramento da celula [V]
+float correnteCelula_A       = 0.0f;  // Corrente entregue pela celula [A]
+float potenciaCelula_W       = 0.0f;  // Potencia eletrica real entregue [W]
 
 unsigned long ultimoControle_ms = 0;
 
@@ -144,14 +144,25 @@ void atualizarAtuadores(uint8_t novoComandoCelula, uint8_t novoComandoEletrolisa
 // ---------------------------------------------------------------------------
 
 /**
- * Le a potencia da celula combustivel estimada pelo resistor shunt.
- * P = V^2 / R, onde V e a tensao medida no pino ADC.
+ * Le a tensao, corrente e potencia da celula combustivel via sensor digital INA219.
+ * P = V_bus * I_shunt [W].
  */
 float lerPotenciaCelula_W() {
-    int   leituraAdc = analogRead(PINO_TENSAO_CELULA);
-    float tensao_V   = leituraAdc * (TENSAO_ADC_V / ADC_MAX);
-    float corrente_A = tensao_V / RESISTENCIA_CARGA_OHM;
-    return tensao_V * corrente_A;
+    if (!ina219Disponivel) {
+        return 0.0f;
+    }
+
+    float busVoltage_V = ina219.getBusVoltage_V();
+    float current_mA   = ina219.getCurrent_mA();
+
+    // Filtra offset negativo de leitura quando a carga esta desligada/circuito aberto
+    if (current_mA < 0.0f)   current_mA   = 0.0f;
+    if (busVoltage_V < 0.0f) busVoltage_V = 0.0f;
+
+    tensaoCelula_V   = busVoltage_V;
+    correnteCelula_A = current_mA / 1000.0f;
+
+    return tensaoCelula_V * correnteCelula_A;
 }
 
 /**
@@ -213,7 +224,9 @@ void imprimirDebug() {
     Serial.print("ucc=");           Serial.print(comandoCelula);
     Serial.print(", uel=");         Serial.print(comandoEletrolisador);
     Serial.print(", Level_H2_mm="); Serial.print(nivelH2_mm);
-    Serial.print(", Pot_cc_W=");    Serial.println(potenciaCelula_W);
+    Serial.print(", V_cc=");        Serial.print(tensaoCelula_V, 3);
+    Serial.print("V, I_cc=");       Serial.print(correnteCelula_A * 1000.0f, 1);
+    Serial.print("mA, Pot_cc_W=");  Serial.println(potenciaCelula_W, 4);
 }
 
 // ---------------------------------------------------------------------------
@@ -228,6 +241,12 @@ void setup() {
 
     configurarAtuadores();
     inicializarSensorNivelH2();
+
+    // Inicializa o sensor de tensao/corrente INA219 (endereco padrao 0x40)
+    if (ina219.begin()) {
+        ina219.setCalibration_32V_2A();
+        ina219Disponivel = true;
+    }
 
     ultimoControle_ms = millis();
 }

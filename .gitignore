@@ -26,3 +26,7 @@ MGCC_microrrede/dados_microrrede*.mat
 
 # Ignore MATLAB AutoSave files
 *.asv
+
+# Legacy Arduino sketches and folders
+Arduino sketches/
+ArduinoCentral_Microrrede_INCT_serial/

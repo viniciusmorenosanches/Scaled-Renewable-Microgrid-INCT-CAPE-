@@ -39,8 +39,10 @@ const int  PINO_SENSOR_TURBINA = A3; // Entrada analogica da tensao da turbina
 // ---------------------------------------------------------------------------
 
 const float         TS_SEGUNDOS         = 0.1f;
-const unsigned long PERIODO_CONTROLE_MS = 100;
-const unsigned long TEMPO_ARME_ESC_MS   = 10000;  // Tempo de arme do ESC [ms]
+const unsigned long PERIODO_CONTROLE_MS     = 100;
+const unsigned long TEMPO_ARME_ESC_MS       = 10000;  // Tempo de arme do ESC [ms]
+const unsigned long TIMEOUT_I2C_WATCHDOG_MS = 2000;   // Sem pacote I2C do R4 por mais de 2s -> para a turbina
+volatile unsigned long ultimoPacoteI2C_ms   = 0;
 
 // ---------------------------------------------------------------------------
 // Conversao ADC
@@ -195,7 +197,8 @@ unsigned long ultimoControle_ms  = 0;
  * recalibrada para a faixa real da turbina.
  */
 void receberReferenciaI2C(int quantidadeBytes) {
-    mestreIniciou = true;
+    mestreIniciou          = true;
+    ultimoPacoteI2C_ms     = millis();
 
     if (quantidadeBytes == sizeof(float)) {
         byte  buffer[sizeof(float)];
@@ -447,7 +450,8 @@ void setup() {
     aguardarPrimeiroComandoDoMestre();
 
     pinMode(PINO_SENSOR_TURBINA, INPUT);
-    ultimoControle_ms = millis();
+    ultimoControle_ms  = millis();
+    ultimoPacoteI2C_ms = millis();
 }
 
 void loop() {
@@ -458,6 +462,11 @@ void loop() {
     ultimoControle_ms = agora_ms;
 
     float referenciaLocal_V = lerReferenciaAtomica();
+
+    // Watchdog I2C: se o R4 parar de enviar referencias por mais de 2 s, desliga a turbina
+    if (mestreIniciou && (agora_ms - ultimoPacoteI2C_ms > TIMEOUT_I2C_WATCHDOG_MS)) {
+        referenciaLocal_V = 0.0f;
+    }
 
     atualizarParametrosLPV(referenciaLocal_V);
 
