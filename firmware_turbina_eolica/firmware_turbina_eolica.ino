@@ -93,7 +93,7 @@ const float OFFSET_TEMPORARIO_POTENCIA_W = 150.0f;  // [W]
 // Debug serial (ligar apenas para desenvolvimento; desligar em operacao)
 // ---------------------------------------------------------------------------
 
-const bool DEBUG_SERIAL = false;
+const bool DEBUG_SERIAL = true;
 
 // ---------------------------------------------------------------------------
 // Rampa de partida do ESC
@@ -208,9 +208,16 @@ void receberReferenciaI2C(int quantidadeBytes) {
         float novaReferencia = 0.0f;
         memcpy(&novaReferencia, buffer, sizeof(float));
 
-        if (novaReferencia > 0.0f && novaReferencia < 2.0f) {
-            novaReferencia += 2.0f;
+        // Clampa leituras negativas (ruido de dados ou perfil)
+        if (novaReferencia < 0.0f) {
+            novaReferencia = 0.0f;
         }
+
+        // NOTA: O ajuste historico de +2.0V foi removido para permitir
+        // que a turbina rastreie dinamicamente o perfil de vento.
+        // if (novaReferencia > 0.0f && novaReferencia < 2.0f) {
+        //     novaReferencia += 2.0f;
+        // }
 
         referenciaTurbina_V = novaReferencia;
         return;
@@ -334,11 +341,15 @@ float calcularPotenciaEolica(float tensaoFiltradaLocal_V) {
 // ---------------------------------------------------------------------------
 
 void atualizarIntegralErro(float erro) {
-    bool controleSaturou = controleNaoSaturado[0][0] < 1.0f ||
-                           controleNaoSaturado[0][0] > 5.0f;
+    // Anti-windup com clamping direcional:
+    // So bloqueia a integral se o controle estiver saturado na MESMA direcao do erro.
+    // Se U < 1.0 V mas erro > 0 (precisa de mais forca), a integral DEVE acumular
+    // para tirar o atuador do piso de saturacao!
+    bool bloqueiaTeto = (controleNaoSaturado[0][0] > 5.0f) && (erro > 0.0f);
+    bool bloqueiaPiso = (controleNaoSaturado[0][0] < 1.0f) && (erro < 0.0f);
 
-    if (controleSaturou) {
-        // Anti-windup: nao acumula integral quando saturado
+    if (bloqueiaTeto || bloqueiaPiso) {
+        // Anti-windup direcional: congela acumulo apenas na direcao saturada
         integralErro[1] = integralErro[0];
     } else {
         integralErro[1] = integralErro[0] + TS_SEGUNDOS * erro;
@@ -462,6 +473,13 @@ void loop() {
     ultimoControle_ms = agora_ms;
 
     float referenciaLocal_V = lerReferenciaAtomica();
+
+    // Re-dispara a rampa de partida suave do ESC sempre que o comando sai de zero
+    static float refAnterior_V = 0.0f;
+    if (refAnterior_V == 0.0f && referenciaLocal_V > 0.0f) {
+        iteracao = 0;
+    }
+    refAnterior_V = referenciaLocal_V;
 
     // Watchdog I2C: se o R4 parar de enviar referencias por mais de 2 s, desliga a turbina
     if (mestreIniciou && (agora_ms - ultimoPacoteI2C_ms > TIMEOUT_I2C_WATCHDOG_MS)) {
