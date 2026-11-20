@@ -7,13 +7,15 @@
 % no computador (MATLAB), sem necessidade dos Arduinos ou bancada física.
 %
 % Vantagens:
-%   1. Executa 24h (2400 passos) em ~3 a 5 segundos (sem pacing serial de 100 ms).
+%   1. Executa sem necessidade de hardware físico ou portas seriais USB.
 %   2. Permite alternar facilmente entre o solver do Vinícius e o da Cecília.
-%   3. Gera exatamente os mesmos gráficos e variáveis da bancada física (HIL).
+%   3. Suporta modo animado em tempo real (igual à bancada) ou modo turbo (em segundos).
+%   4. Gera exatamente os mesmos gráficos e variáveis da bancada física (HIL).
 %
 % Uso:
 %   1. Escolher o solver em SOLVER_CHOICE abaixo ("vini" ou "cecilia").
-%   2. Executar este script no MATLAB.
+%   2. Escolher se deseja animação ao vivo em ANIMAR_EM_TEMPO_REAL.
+%   3. Executar este script no MATLAB.
 %
 % =========================================================================
 
@@ -21,13 +23,18 @@ clear; clc; close all;
 warning('off', 'MATLAB:nearlySingularMatrix');
 
 % =========================================================================
-%  1. CONFIGURAÇÃO
+%  1. CONFIGURAÇÃO — editar aqui antes de rodar
 % =========================================================================
 
 % Escolha do Solver MPC:
 %   "vini"    -> Solver LPV-PILOT oficial com warm-start (modelo original)
 %   "cecilia" -> Novo algoritmo/solver da Cecília (ver função no final)
 SOLVER_CHOICE = "vini";
+
+% Animação gráfica em tempo real:
+%   true  -> Abre a tela e desenha as curvas e a bateria ao vivo (igual à bancada)
+%   false -> Modo turbo: roda todas as 24h em ~3 segundos e plota tudo no final
+ANIMAR_EM_TEMPO_REAL = true;
 
 % Inicializa parâmetros físicos e do MPC (Ts=0.1s, k1..k8, matrizes de estado)
 microgrid_init_w_demand;
@@ -67,13 +74,71 @@ Pot_carga    = 0.0;   % potência de carga da bateria [W]
 Pot_descarga = 0.0;   % potência de descarga da bateria [W]
 
 % =========================================================================
-%  3. LOOP DE SIMULAÇÃO (24 HORAS)
+%  3. PREPARAÇÃO DA JANELA DE ANIMAÇÃO AO VIVO (SE ATIVADA)
 % =========================================================================
 
-fprintf("Iniciando simulação offline com solver '%s'...\n", SOLVER_CHOICE);
+if ANIMAR_EM_TEMPO_REAL
+    fig = figure('Name', 'Simulação Offline — Monitoramento em Tempo Real', 'NumberTitle', 'off');
+    tiledlayout(fig, 3, 1);
+
+    % Subplot 1: Nível de H2
+    ax1 = nexttile;
+    h1 = animatedline(ax1, 'Color', 'b', 'LineWidth', 1.5);
+    ax1.YGrid = 'on';
+    title(ax1, 'Nível de H_2');
+    xlabel(ax1, 'Tempo Simulado (h)');
+    ylabel(ax1, 'Nível (mm)');
+    ylim(ax1, [0, 20]);
+
+    % Subplot 2: Potências
+    ax2 = nexttile;
+    h2_cc     = animatedline(ax2, 'Color', 'r',    'LineWidth', 1.5, 'DisplayName', 'Pot\_cc');
+    h2_el     = animatedline(ax2, 'Color', 'c',    'LineWidth', 1.5, 'DisplayName', 'Pot\_el');
+    h2_total  = animatedline(ax2, 'Color', 'k',    'LineWidth', 1.5, 'DisplayName', 'Pot\_total');
+    h2_wt     = animatedline(ax2, 'Color', 'g',    'LineWidth', 1.5, 'DisplayName', 'Pot\_wt');
+    h2_pv     = animatedline(ax2, 'Color', 'm',    'LineWidth', 1.5, 'DisplayName', 'Pot\_pv');
+    h2_c      = animatedline(ax2, 'Color', 'b',    'LineWidth', 1.5, 'DisplayName', 'Pot\_carga');
+    h2_d      = animatedline(ax2, 'Color', 'y',    'LineWidth', 1.5, 'DisplayName', 'Pot\_descarga');
+    h2_demand = animatedline(ax2, 'Color', 'cyan', 'LineWidth', 1.0, 'DisplayName', 'Demanda');
+    ax2.YGrid = 'on';
+    legend(ax2, 'show', 'Location', 'northeast');
+    title(ax2, 'Potências da Microrrede');
+    xlabel(ax2, 'Tempo Simulado (h)');
+    ylabel(ax2, 'Potência (W)');
+
+    % Subplot 3: Estado de Carga (SoC) — mostrador estilo bateria
+    ax3 = nexttile;
+    ylim(ax3, [0, 1]);
+    xlim(ax3, [-0.5, 0.5]);
+    ax3.XTick = [];
+    ax3.YTick = [];
+    title(ax3, 'Estado de Carga da Bateria (SoC)');
+    hold(ax3, 'on');
+    rectangle(ax3, 'Position', [-0.4 0 0.8 1],  'EdgeColor', 'k', 'LineWidth', 2);
+    rectangle(ax3, 'Position', [-0.1 1 0.2 0.1], 'FaceColor', 'k');
+    socBar = rectangle(ax3, 'Position', [-0.4 0 0 1], 'FaceColor', 'white');
+    hold(ax3, 'off');
+
+    xlim_max = 24.0;
+    xlim(ax1, [0, xlim_max]);
+    xlim(ax2, [0, xlim_max]);
+end
+
+% =========================================================================
+%  4. LOOP PRINCIPAL DE SIMULAÇÃO (24 HORAS)
+% =========================================================================
+
+fprintf("Iniciando simulação offline com solver '%s' (Animar ao vivo: %d)...\n", ...
+        SOLVER_CHOICE, ANIMAR_EM_TEMPO_REAL);
 t_total_start = tic;
 
 for i = 1:N_amostras
+    % Interrompe se o usuário fechar a janela durante a animação
+    if ANIMAR_EM_TEMPO_REAL && ~ishandle(fig)
+        disp("Janela fechada pelo usuário. Encerrando simulação antecipadamente.");
+        break;
+    end
+
     % ---------------------------------------------------------------------
     % A. Modelo da Planta: Nível de H2 (integração do tanque físico)
     % ---------------------------------------------------------------------
@@ -113,7 +178,36 @@ for i = 1:N_amostras
                        - Pot_el_arr(i) - Pot_carga + Pot_descarga;
 
     % ---------------------------------------------------------------------
-    % F. Resolução do MPC
+    % F. Atualização Gráfica em Tempo Real (a cada 10 passos)
+    % ---------------------------------------------------------------------
+    if ANIMAR_EM_TEMPO_REAL && mod(i, 10) == 0
+        t_horas = i * (24.0 / N_amostras);
+
+        addpoints(h1,        t_horas, nivelAgua(i));
+        addpoints(h2_cc,     t_horas, Pot_cc_arr(i));
+        addpoints(h2_el,     t_horas, Pot_el_arr(i));
+        addpoints(h2_total,  t_horas, Pot_total_arr(i));
+        addpoints(h2_wt,     t_horas, Pot_wt_arr(i));
+        addpoints(h2_pv,     t_horas, Pot_pv_arr(i));
+        addpoints(h2_c,      t_horas, Pot_carga);
+        addpoints(h2_d,      t_horas, Pot_descarga);
+        addpoints(h2_demand, t_horas, demand(i));
+
+        % Atualiza cor e barra da bateria
+        socBar.Position = [-0.4 0 0.8 * SoC_arr(i) 1];
+        if SoC_arr(i) > 0.6
+            socBar.FaceColor = 'g';
+        elseif SoC_arr(i) > 0.3
+            socBar.FaceColor = 'y';
+        else
+            socBar.FaceColor = 'r';
+        end
+
+        drawnow limitrate;
+    end
+
+    % ---------------------------------------------------------------------
+    % G. Resolução do MPC
     % ---------------------------------------------------------------------
     if i > time_to_turn_on
         % Vetores normalizados para o MPC
@@ -154,7 +248,7 @@ for i = 1:N_amostras
         dat_pot_descarga(i) = Pot_descarga;
     end
 
-    if mod(i, 400) == 0
+    if ~ANIMAR_EM_TEMPO_REAL && mod(i, 400) == 0
         fprintf("  Passo %d / %d (%.1f h simuladas)...\n", i, N_amostras, i * 24 / N_amostras);
     end
 end
@@ -163,15 +257,20 @@ tempo_execucao = toc(t_total_start);
 fprintf("\nSimulação de 24h CONCLUÍDA com sucesso em %.2f segundos!\n", tempo_execucao);
 
 % =========================================================================
-%  4. SALVAR RESULTADOS E GERAR GRÁFICOS
+%  5. SALVAR RESULTADOS E GERAR GRÁFICOS FINAIS
 % =========================================================================
 
-SoC       = SoC_arr;
-Pot_cc    = Pot_cc_arr;
-Pot_el    = Pot_el_arr;
-Pot_total = Pot_total_arr;
-Pot_wt    = Pot_wt_arr;
-Pot_pv    = Pot_pv_arr;
+N_pts     = min(i, N_amostras);
+SoC       = SoC_arr(1:N_pts);
+Pot_cc    = Pot_cc_arr(1:N_pts);
+Pot_el    = Pot_el_arr(1:N_pts);
+Pot_total = Pot_total_arr(1:N_pts);
+Pot_wt    = Pot_wt_arr(1:N_pts);
+Pot_pv    = Pot_pv_arr(1:N_pts);
+nivelAgua = nivelAgua(1:N_pts);
+demand    = demand(1:N_pts);
+dat_pot_carga    = dat_pot_carga(1:N_pts);
+dat_pot_descarga = dat_pot_descarga(1:N_pts);
 
 arquivo_saida = 'dados_microrrede_offline.mat';
 disp("Salvando resultados em " + arquivo_saida + "...");
@@ -181,11 +280,11 @@ save(arquivo_saida, ...
      'dat_pot_carga', 'dat_pot_descarga');
 disp("Resultados salvos.");
 
-% Plota gráficos usando a função oficial da microrrede
-plotar_resultados_mgcc(arquivo_saida, SoC_ref, ref_h2, N_amostras);
+% Plota gráficos finais detalhados de 4 subplots
+plotar_resultados_mgcc(arquivo_saida, SoC_ref, ref_h2, N_pts);
 
 % =========================================================================
-%  5. FUNÇÃO DO SOLVER DA CECÍLIA (ESPAÇO RESERVADO PARA ADAPTAÇÃO)
+%  6. FUNÇÃO DO SOLVER DA CECÍLIA (ESPAÇO RESERVADO PARA ADAPTAÇÃO)
 % =========================================================================
 function [u_sol, J] = solver_cecilia(x_prev, u_prev, xref, d, mpc)
     % solver_cecilia — Espaço para a Cecília plugar seu algoritmo de otimização.
