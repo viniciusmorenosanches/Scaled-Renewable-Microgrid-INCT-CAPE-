@@ -75,19 +75,23 @@ const float GANHO_DIVISOR_TENSAO = 43.0f / 10.0f;  // 4.3 [adimensional]
 const float GANHO_ESC_POR_VOLT = 38.0f;
 
 // ---------------------------------------------------------------------------
-// Ajuste temporario de potencia
+// Escala de potencia da turbina eolica
 //
-// O perfil de referencia da turbina ainda nao esta calibrado para a
-// potencia fisica direta. A potencia enviada ao R4 recebe um ajuste linear:
+// A turbina fisica de bancada (motor + helice + pequeno gerador) produz em
+// rotacao maxima (U=5.0V) uma tensao medida Yf de ~1.50V a 1.60V.
+// Pela aerodinamica pura (0.5 * rho * A * Cp * Yf^3), a potencia fisica
+// medida em bancada atinge ~0.051 W a 0.056 W.
 //
-//   potenciaEolica_W = potenciaFisica_W * ESCALA_TEMPORARIA + OFFSET_TEMPORARIO
-//
-// Quando o perfil de referencia for melhorado, remover o offset e ajustar
-// a escala para uma relacao fisica mais direta.
+// No cenario da microrrede (dados_cenario_24h_reformulado.mat), a potencia
+// eolica varia entre ~8 W e ~280 W (media ~150 W).
+// Para mapear a excursao real de 0.051 W -> 250 W de forma proporcional
+// a aerodinamica real sem offset artificial que achate o grafico:
+//   Fator de escala = 250.0 W / 0.0511 W = 4900.0f
+//   Offset = 0.0 W
 // ---------------------------------------------------------------------------
 
-const float ESCALA_TEMPORARIA_POTENCIA  = 50.0f;   // [adimensional]
-const float OFFSET_TEMPORARIO_POTENCIA_W = 150.0f;  // [W]
+const float ESCALA_TEMPORARIA_POTENCIA   = 4900.0f; // [adimensional]
+const float OFFSET_TEMPORARIO_POTENCIA_W = 0.0f;    // [W]
 
 // ---------------------------------------------------------------------------
 // Debug serial (ligar apenas para desenvolvimento; desligar em operacao)
@@ -321,19 +325,24 @@ float filtrarTensaoKalman(float tensaoAtual_V) {
  * Como v (velocidade do vento) e estimada a partir da tensao filtrada da turbina,
  * a formula usa tensao ao cubo como proxy.
  *
- * O ajuste linear (escala + offset) e temporario e sera removido quando o
- * perfil de referencia for recalibrado para a potencia fisica direta.
+ * Em bancada com gerador reduzido, aplica-se o fator de escala ESCALA_TEMPORARIA_POTENCIA
+ * para elevar a excursao fisica (0 .. 0.051 W) para o perfil da microrrede (0 .. 250 W).
  */
 float calcularPotenciaEolica(float tensaoFiltradaLocal_V) {
-    const float densidadeAr       = 1.225f;   // [kg/m3] ar a 15 graus C ao nivel do mar
-    const float raioRotor_m       = 0.15f;    // [m] raio do rotor da turbina em escala
-    const float coeficientePotencia = 0.35f;  // Cp [-] coeficiente de potencia (Betz realista)
+    if (tensaoFiltradaLocal_V <= 0.05f) {
+        return 0.0f;
+    }
 
-    float constanteAero = 0.5f * densidadeAr * PI * (raioRotor_m * raioRotor_m) * coeficientePotencia;
-    float tensaoAoCubo  = tensaoFiltradaLocal_V * tensaoFiltradaLocal_V * tensaoFiltradaLocal_V;
+    const float densidadeAr         = 1.225f;   // [kg/m3] ar a 15 graus C ao nivel do mar
+    const float raioRotor_m         = 0.15f;    // [m] raio do rotor da turbina em escala
+    const float coeficientePotencia = 0.35f;    // Cp [-] coeficiente de potencia (Betz realista)
+
+    float constanteAero    = 0.5f * densidadeAr * PI * (raioRotor_m * raioRotor_m) * coeficientePotencia;
+    float tensaoAoCubo     = tensaoFiltradaLocal_V * tensaoFiltradaLocal_V * tensaoFiltradaLocal_V;
     float potenciaFisica_W = constanteAero * tensaoAoCubo;
 
-    return potenciaFisica_W * ESCALA_TEMPORARIA_POTENCIA + OFFSET_TEMPORARIO_POTENCIA_W;
+    float potencia_W = potenciaFisica_W * ESCALA_TEMPORARIA_POTENCIA + OFFSET_TEMPORARIO_POTENCIA_W;
+    return (potencia_W > 0.0f) ? potencia_W : 0.0f;
 }
 
 // ---------------------------------------------------------------------------

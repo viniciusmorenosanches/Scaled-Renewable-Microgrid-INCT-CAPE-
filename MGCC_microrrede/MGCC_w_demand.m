@@ -200,17 +200,32 @@ while ishandle(fig)
             disp("RAW DATA DO R4: " + data_str);
         end
 
-        % Divide os valores recebidos do R4.
+        % Divide os valores recebidos do R4 com protecao contra timeout/dados corrompidos
         % NOTA DE INTEGRAÇÃO: O R4 envia 8 valores via telemetria:
         % [Level_H2, Pot_cc, Pot_total, SoC, Pot_wt, Pot_pv, Pc, Pd]
         % Por decisão de projeto, o MATLAB utiliza do R4 apenas o nível de H2 (1),
         % Pot_wt (5) e Pot_pv (6). O SoC e a Pot_cc são calculados localmente
         % no modelo MATLAB para maior precisão e estabilidade.
-        valores_num = str2double(split(data_str, ','));
+        partes = split(strtrim(data_str), ',');
+        if length(partes) >= 6 && ~any(isnan(str2double(partes(1:6))))
+            valores_num = str2double(partes);
+            nivelAgua(i)  = valores_num(1);
+            Pot_wt_arr(i) = valores_num(5);
+            Pot_pv_arr(i) = valores_num(6);
+        else
+            % Fallback seguro: reutiliza leitura da iteracao anterior em caso de timeout transitorio
+            if i > 1
+                nivelAgua(i)  = nivelAgua(i-1);
+                Pot_wt_arr(i) = Pot_wt_arr(i-1);
+                Pot_pv_arr(i) = Pot_pv_arr(i-1);
+            else
+                nivelAgua(i)  = 0;
+                Pot_wt_arr(i) = 0;
+                Pot_pv_arr(i) = 0;
+            end
+            disp("Aviso: Timeout ou pacote incompleto na iteracao " + i + " ('" + data_str + "'). Reutilizando valores anteriores.");
+        end
 
-        nivelAgua(i) = valores_num(1);
-        Pot_wt_arr(i) = valores_num(5);
-        Pot_pv_arr(i) = valores_num(6);
         demand(i)     = data.demanda(i);
 
         % Potências dos atuadores H2 calculadas localmente (mais estável que ler do R4)
