@@ -13,6 +13,14 @@
 % close all
 % clc
 
+% Garante que a biblioteca do solver LPV-PILOT esteja no Path do MATLAB automaticamente
+pasta_atual = fileparts(mfilename('fullpath'));
+if ~isempty(pasta_atual)
+    addpath(genpath(fullfile(pasta_atual, 'LPV-PILOT-final_features')));
+else
+    addpath(genpath('LPV-PILOT-final_features'));
+end
+
 %% -------------------------------------------------------------------------
 %  Parâmetros do modelo de estado discreto (Ts = 100 ms)
 %  Estado: x = [SoC; nível_H2 (normalizado /10); Pot_total (normalizado /1000)]

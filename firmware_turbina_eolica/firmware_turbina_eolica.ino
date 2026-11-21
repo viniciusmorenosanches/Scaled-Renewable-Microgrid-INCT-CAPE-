@@ -75,19 +75,19 @@ const float GANHO_DIVISOR_TENSAO = 43.0f / 10.0f;  // 4.3 [adimensional]
 const float GANHO_ESC_POR_VOLT = 38.0f;
 
 // ---------------------------------------------------------------------------
-// Escala de potencia da turbina eolica
+// Escala de potencia da turbina eolica — DOIS REGIMES DE CALIBRACAO
 //
-// A turbina fisica de bancada (motor + helice + pequeno gerador) produz em
-// rotacao maxima (U=5.0V) uma tensao medida Yf de ~1.50V a 1.60V.
-// Pela aerodinamica pura (0.5 * rho * A * Cp * Yf^3), a potencia fisica
-// medida em bancada atinge ~0.051 W a 0.056 W.
+// Regime A (Observador de Kalman sem sensor / A3 ~ 0V -> Yf in [0 .. 1.50V]):
+//   Quando o divisor de tensao no pino A3 esta desconectado ou lendo ~0V,
+//   o filtro de Kalman estima Yf pela predicao do modelo (Yf ~ 0.30 * U),
+//   atingindo ~1.49V quando U = 5.00V (potencia aerodinamica fisica ~ 0.051 W).
+//   Com ESCALA = 4900.0f e OFFSET = 0.0f, mapeia 0..1.50V -> 0..250 W.
 //
-// No cenario da microrrede (dados_cenario_24h_reformulado.mat), a potencia
-// eolica varia entre ~8 W e ~280 W (media ~150 W).
-// Para mapear a excursao real de 0.051 W -> 250 W de forma proporcional
-// a aerodinamica real sem offset artificial que achate o grafico:
-//   Fator de escala = 250.0 W / 0.0511 W = 4900.0f
-//   Offset = 0.0 W
+// Regime B (Sensor fisico reconectado no A3 -> Y_raw = 2.0 .. 4.5V):
+//   Se o divisor resistivo (43k/10k) for reconectado ao A3 e entregar a
+//   tensao real do gerador (~2.0V a 4.5V), REDUZIR a escala para nao saturar
+//   em milhares de Watts (ex: ESCALA = 50.0f com OFFSET = 150.0f como nos
+//   ensaios originais, ou ESCALA = 120.0f com OFFSET = 0.0f para 0..250W).
 // ---------------------------------------------------------------------------
 
 const float ESCALA_TEMPORARIA_POTENCIA   = 4900.0f; // [adimensional]
@@ -451,6 +451,7 @@ void imprimirDebug(float referencia_V) {
 
     Serial.print("Pot_wt=");      Serial.print(potenciaEolica_W, 4);
     Serial.print(", U=");         Serial.print(controleSaturado_V);
+    Serial.print(", Y_raw=");     Serial.print(tensaoMedida_V);
     Serial.print(", Yf=");        Serial.print(tensaoFiltrada_V);
     Serial.print(", ref=");       Serial.println(referencia_V);
 }

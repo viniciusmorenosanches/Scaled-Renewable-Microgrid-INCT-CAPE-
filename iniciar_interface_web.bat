@@ -16,12 +16,12 @@ if %errorlevel% neq 0 (
 )
 
 :: Verifica/Instala dependencias necessarias
-echo [INFO] Verificando dependencias necessarias (fastapi, uvicorn, pyserial, websockets)...
-python -c "import fastapi, uvicorn, serial, websockets" >nul 2>&1
+echo [INFO] Verificando dependencias necessarias (fastapi, uvicorn, pyserial, websockets, python-multipart)...
+python -c "import fastapi, uvicorn, serial, websockets, multipart" >nul 2>&1
 if %errorlevel% neq 0 (
     echo [INFO] Instalando pacotes necessarios via pip...
     python -m pip install --upgrade pip
-    python -m pip install fastapi uvicorn pyserial websockets
+    python -m pip install fastapi uvicorn pyserial websockets python-multipart
     if %errorlevel% neq 0 (
         echo [ERRO] Falha ao instalar dependencias! Verifique sua conexao de internet.
         pause

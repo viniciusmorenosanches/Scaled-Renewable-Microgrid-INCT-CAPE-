@@ -1,0 +1,270 @@
+\documentclass[12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[brazilian]{babel}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{geometry}
+\usepackage{bm}
+
+\geometry{verbose,tmargin=2.5cm,bmargin=2.5cm,lmargin=2.5cm,rmargin=2.5cm}
+
+\title{Dedução Formal do Modelo MPC Incremental com Estado Aumentado $[x; u_{\text{prev}}]$}
+\author{Johannes Fischer}
+\date{Julho de 2026}
+
+\begin{document}
+
+\maketitle
+
+\section{Representação do Sistema Físico}
+
+Considere um sistema linear genérico discreto no tempo com $n_x$ estados, $n_u$ entradas, $n_y$ saídas e $n_d$ perturbações, representado pelas seguintes equações:
+\begin{subequations}
+\label{eq:sistema_fisico}
+\begin{align}
+x(t+1) &= A x(t) + B u(t) \\
+y(t) &= D u(t) + E d(t)
+\end{align}
+\end{subequations}
+onde:
+\begin{itemize}
+    \item $x(t) \in \mathbb{R}^{n_x}$ é o vetor de estados físicos.
+    \item $u(t) \in \mathbb{R}^{n_u}$ é o vetor de entradas físicas de controle.
+    \item $d(t) \in \mathbb{R}^{n_d}$ é o vetor de perturbações externas.
+    \item $y(t) \in \mathbb{R}^{n_y}$ é o vetor de saídas algébricas do sistema.
+    \item $A \in \mathbb{R}^{n_x \times n_x}$, $B \in \mathbb{R}^{n_x \times n_u}$, $D \in \mathbb{R}^{n_y \times n_u}$ e $E \in \mathbb{R}^{n_y \times n_d}$ são as matrizes do modelo.
+\end{itemize}
+
+---
+
+\section{Formulação Incremental e Aumento de Estados}
+
+Para introduzir ação integradora no controlador, definimos o incremento do sinal de controle $\Delta u(t) \in \mathbb{R}^{n_u}$ como:
+\begin{equation}
+\label{eq:delta_u}
+\Delta u(t) = u(t) - u(t-1) \implies u(t) = u(t-1) + \Delta u(t)
+\end{equation}
+
+Definimos um novo vetor de estados aumentado $\tilde{x}(t) \in \mathbb{R}^{n_x + n_u}$ que armazena os estados físicos atuais e as entradas de controle aplicadas no passo anterior:
+\begin{equation}
+\tilde{x}(t) = \begin{bmatrix} x(t) \\ u(t-1) \end{bmatrix}
+\end{equation}
+
+\subsection{Equação de Atualização de Estados}
+Substituindo \eqref{eq:delta_u} na dinâmica física de estados \eqref{eq:sistema_fisico}a:
+\begin{align}
+x(t+1) &= A x(t) + B (u(t-1) + \Delta u(t)) \nonumber \\
+       &= A x(t) + B u(t-1) + B \Delta u(t)
+\end{align}
+
+A dinâmica de atualização do sinal de controle passado é:
+\begin{equation}
+u(t) = I_{n_u} u(t-1) + I_{n_u} \Delta u(t)
+\end{equation}
+
+Agrupando ambas as equações na forma matricial aumentada:
+\begin{equation}
+\begin{bmatrix} x(t+1) \\ u(t) \end{bmatrix} = \begin{bmatrix} A & B \\ \bm{0}_{n_u \times n_x} & I_{n_u} \end{bmatrix} \begin{bmatrix} x(t) \\ u(t-1) \end{bmatrix} + \begin{bmatrix} B \\ I_{n_u} \end{bmatrix} \Delta u(t)
+\end{equation}
+que pode ser reescrita compactamente como:
+\begin{equation}
+\label{eq:estado_aumentado_atualizado}
+\tilde{x}(t+1) = \tilde{A} \tilde{x}(t) + \tilde{B} \Delta u(t)
+\end{equation}
+onde:
+\begin{equation}
+\tilde{A} = \begin{bmatrix} A & B \\ \bm{0} & I \end{bmatrix}_{(n_x+n_u) \times (n_x+n_u)}, \quad \tilde{B} = \begin{bmatrix} B \\ I \end{bmatrix}_{(n_x+n_u) \times n_u}
+\end{equation}
+
+\subsection{Equação de Saída Aumentada}
+A saída do sistema original \eqref{eq:sistema_fisico}b depende diretamente de $u(t)$. Substituindo $u(t) = u(t-1) + \Delta u(t)$ na equação de saída:
+\begin{align}
+y(t) &= D (u(t-1) + \Delta u(t)) + E d(t) \nonumber \\
+     &= D u(t-1) + D \Delta u(t) + E d(t)
+\end{align}
+
+Escrevendo $y(t)$ em termos do estado aumentado $\tilde{x}(t)$:
+\begin{equation}
+\label{eq:saida_aumentada}
+y(t) = \tilde{C} \tilde{x}(t) + D \Delta u(t) + E d(t)
+\end{equation}
+onde a matriz de observação aumentada é:
+\begin{equation}
+\tilde{C} = \begin{bmatrix} \bm{0}_{n_y \times n_x} & D \end{bmatrix}_{n_y \times (n_x+n_u)}
+\end{equation}
+
+\section{Predições Futuras ao Longo do Horizonte $N$}
+
+Dadas as condições no instante $t$, deseja-se prever a trajetória futura dos estados e das saídas sobre um horizonte de predição $N$.
+
+\subsection{Predição de Estados}
+Aplicando a equação \eqref{eq:estado_aumentado_atualizado} de forma recursiva:
+\begin{align}
+\tilde{x}(t+1|t) &= \tilde{A} \tilde{x}(t) + \tilde{B} \Delta u(t) \nonumber \\
+\tilde{x}(t+2|t) &= \tilde{A}^2 \tilde{x}(t) + \tilde{A}\tilde{B} \Delta u(t) + \tilde{B} \Delta u(t+1) \nonumber \\
+&\vdots \nonumber \\
+\tilde{x}(t+N|t) &= \tilde{A}^N \tilde{x}(t) + \sum_{i=1}^N \tilde{A}^{N-i} \tilde{B} \Delta u(t+i-1)
+\end{align}
+
+Definindo o vetor empilhado de estados futuros $\bm{\tilde{X}}$ e o vetor de incrementos de controle $\bm{\Delta U}$:
+\begin{equation}
+\bm{\tilde{X}} = \begin{bmatrix} \tilde{x}(t+1|t) \\ \vdots \\ \tilde{x}(t+N|t) \end{bmatrix}_{N(n_x+n_u) \times 1}, \quad
+\bm{\Delta U} = \begin{bmatrix} \Delta u(t) \\ \vdots \\ \Delta u(t+N-1) \end{bmatrix}_{N n_u \times 1}
+\end{equation}
+escrevemos a trajetória futura de estados na forma compacta:
+\begin{equation}
+\label{eq:predicao_estados_matricial}
+\bm{\tilde{X}} = F_x \tilde{x}(t) + G_x \bm{\Delta U}
+\end{equation}
+onde:
+\begin{equation}
+F_x = \begin{bmatrix} \tilde{A} \\ \tilde{A}^2 \\ \vdots \\ \tilde{A}^N \end{bmatrix}, \quad
+G_x = \begin{bmatrix}
+\tilde{B} & \bm{0} & \dots & \bm{0} \\
+\tilde{A}\tilde{B} & \tilde{B} & \dots & \bm{0} \\
+\vdots & \vdots & \ddots & \vdots \\
+\tilde{A}^{N-1}\tilde{B} & \tilde{A}^{N-2}\tilde{B} & \dots & \tilde{B}
+\end{bmatrix}
+\end{equation}
+
+\subsection{Predição de Saídas}
+Para obter a trajetória de saídas futuras, calculamos a saída prevista $y(t+k|t)$ para cada passo do horizonte $k = 1, 2, \dots, N$ a partir da equação de saída aumentada \eqref{eq:saida_aumentada}:
+\begin{equation}
+y(t+k|t) = \tilde{C} \tilde{x}(t+k|t) + D \Delta u(t+k) + E d(t+k)
+\end{equation}
+
+Para compreender a estrutura matricial resultante, detalhamos os primeiros passos de predição:
+\begin{itemize}
+    \item {\bf Para $k=1$:}
+    \begin{align}
+    y(t+1|t) &= \tilde{C} \tilde{x}(t+1|t) + D \Delta u(t+1) + E d(t+1) \nonumber \\
+             &= \tilde{C} \left[ \tilde{A} \tilde{x}(t) + \tilde{B} \Delta u(t) \right] + D \Delta u(t+1) + E d(t+1) \nonumber \\
+             &= \tilde{C}\tilde{A} \tilde{x}(t) + \tilde{C}\tilde{B} \Delta u(t) + D \Delta u(t+1) + E d(t+1)
+    \end{align}
+    
+    \item {\bf Para $k=2$:}
+    \begin{align}
+    y(t+2|t) &= \tilde{C} \tilde{x}(t+2|t) + D \Delta u(t+2) + E d(t+2) \nonumber \\
+             &= \tilde{C} \left[ \tilde{A}^2 \tilde{x}(t) + \tilde{A}\tilde{B} \Delta u(t) + \tilde{B} \Delta u(t+1) \right] + D \Delta u(t+2) + E d(t+2) \nonumber \\
+             &= \tilde{C}\tilde{A}^2 \tilde{x}(t) + \tilde{C}\tilde{A}\tilde{B} \Delta u(t) + \tilde{C}\tilde{B} \Delta u(t+1) + D \Delta u(t+2) + E d(t+2)
+    \end{align}
+\end{itemize}
+
+Generalizando este processo recursivo para um passo genérico $k = j$:
+\begin{equation}
+y(t+j|t) = \tilde{C}\tilde{A}^j \tilde{x}(t) + \sum_{i=1}^j \tilde{C}\tilde{A}^{j-i}\tilde{B}\Delta u(t+i-1) + D\Delta u(t+j) + E d(t+j)
+\end{equation}
+
+Empilhamos as saídas futuras no vetor $\bm{Y} \in \mathbb{R}^{N n_y}$ e as perturbações futuras medidas no vetor $\bm{D} \in \mathbb{R}^{N n_d}$, definidos como:
+\begin{equation}
+\bm{Y} = \begin{bmatrix} y(t+1|t) \\ y(t+2|t) \\ \vdots \\ y(t+N|t) \end{bmatrix}_{N n_y \times 1}, \quad
+\bm{D} = \begin{bmatrix} d(t+1) \\ d(t+2) \\ \vdots \\ d(t+N) \end{bmatrix}_{N n_d \times 1}
+\end{equation}
+
+A trajetória de saída pode ser expressa compactamente pela relação linear:
+\begin{equation}
+\label{eq:predicao_saida_matricial}
+\bm{Y} = F_y \tilde{x}(t) + G_y \bm{\Delta U} + E_{pert} \bm{D}
+\end{equation}
+onde:
+\begin{equation}
+F_y = \begin{bmatrix} \tilde{C}\tilde{A} \\ \tilde{C}\tilde{A}^2 \\ \vdots \\ \tilde{C}\tilde{A}^N \end{bmatrix}_{N n_y \times (n_x+n_u)}, \quad
+E_{pert} = \begin{bmatrix} 
+E & \bm{0} & \dots & \bm{0} \\
+\bm{0} & E & \dots & \bm{0} \\
+\vdots & \vdots & \ddots & \vdots \\
+\bm{0} & \bm{0} & \dots & E 
+\end{bmatrix}_{N n_y \times N n_d}
+\end{equation}
+
+A matriz de resposta forçada de saídas $G_y \in \mathbb{R}^{N n_y \times N n_u}$ mapeia os incrementos futuros $\bm{\Delta U} = [\Delta u(t)^T \quad \dots \quad \Delta u(t+N-1)^T]^T$. Como o vetor $\bm{\Delta U}$ termina no passo $t+N-1$, o termo de acoplamento direto final $D\Delta u(t+N)$ é assumido nulo ($\Delta u(t+N) = \bm{0}$) pois está além do horizonte de controle projetado. Assim, agrupando os coeficientes das equações anteriores, obtemos a estrutura de $G_y$:
+\begin{equation}
+\label{eq:matriz_Gy_correta}
+G_y = \begin{bmatrix}
+\tilde{C}\tilde{B} & D & \bm{0} & \bm{0} & \dots & \bm{0} \\
+\tilde{C}\tilde{A}\tilde{B} & \tilde{C}\tilde{B} & D & \bm{0} & \dots & \bm{0} \\
+\tilde{C}\tilde{A}^2\tilde{B} & \tilde{C}\tilde{A}\tilde{B} & \tilde{C}\tilde{B} & D & \dots & \bm{0} \\
+\vdots & \vdots & \vdots & \ddots & \ddots & \vdots \\
+\tilde{C}\tilde{A}^{N-2}\tilde{B} & \tilde{C}\tilde{A}^{N-3}\tilde{B} & \tilde{C}\tilde{A}^{N-4}\tilde{B} & \dots & \tilde{C}\tilde{B} & D \\
+\tilde{C}\tilde{A}^{N-1}\tilde{B} & \tilde{C}\tilde{A}^{N-2}\tilde{B} & \tilde{C}\tilde{A}^{N-3}\tilde{B} & \dots & \tilde{C}\tilde{A}\tilde{B} & \tilde{C}\tilde{B}
+\end{bmatrix}
+\end{equation}
+Note que a matriz de acoplamento direto $D$ aparece deslocada na primeira super-diagonal da matriz $G_y$, pois o efeito instantâneo do incremento $\Delta u(t+k)$ afeta a saída $y(t+k|t)$ no mesmo passo, enquanto o efeito dinâmico do estado $\tilde{C}\tilde{B}$ atua com um atraso de um passo (multiplicando $\Delta u(t+k-1)$).
+
+\section{Formulação Quadrática (QP) para o \texttt{quadprog}}
+
+A função objetivo a ser minimizada busca conciliar o rastreamento das trajetórias de referência dos estados físicos e das saídas com a penalização do esforço de variação do controle, sendo expressa por:
+\begin{equation}
+\label{eq:custo_original}
+J = (\bm{X}_f - \bm{X}_{\text{ref}})^T Q (\bm{X}_f - \bm{X}_{\text{ref}}) + (\bm{Y} - \bm{Y}_{\text{ref}})^T S (\bm{Y} - \bm{Y}_{\text{ref}}) + \bm{\Delta U}^T R \bm{\Delta U}
+\end{equation}
+onde:
+\begin{itemize}
+    \item $\bm{X}_f = [x(t+1|t)^T \quad \dots \quad x(t+N|t)^T]^T \in \mathbb{R}^{N n_x}$ representa a projeção futura apenas dos estados físicos reais.
+    \item $\bm{X}_{\text{ref}} \in \mathbb{R}^{N n_x}$ é a trajetória de referência dos estados físicos (como os valores fixados de $SoC$ e $LOH$).
+    \item $\bm{Y} \in \mathbb{R}^{N n_y}$ é a predição de saídas calculada em \eqref{eq:predicao_saida_matricial}.
+    \item $\bm{Y}_{\text{ref}} \in \mathbb{R}^{N n_y}$ é a trajetória de referência das saídas (a demanda elétrica a ser atingida).
+    \item $Q \in \mathbb{R}^{N n_x \times N n_x}, S \in \mathbb{R}^{N n_y \times N n_y}$ e $R \in \mathbb{R}^{N n_u \times N n_u}$ são as matrizes de ponderação do controle.
+\end{itemize}
+
+Nas seções a seguir, detalha-se a transição desta representação teórica para a forma quadrática padrão exigida para a programação computacional.
+
+\subsection{Extração dos Estados Físicos da Matriz Aumentada}
+\label{subsec:extracao}
+O vetor de estados futuros predito pelo modelo aumentado em \eqref{eq:predicao_estados_matricial} é $\bm{\tilde{X}}$, que tem dimensão $N(n_x+n_u)$ pois inclui os controles passados $u(t+k-1)$ no vetor de estados. Como na função custo queremos penalizar apenas os desvios dos estados físicos $x(t+k)$, definimos uma matriz de seleção $T_{sel} \in \mathbb{R}^{N n_x \times N(n_x+n_u)}$ tal que:
+\begin{equation}
+\bm{X}_f = T_{sel} \bm{\tilde{X}} = T_{sel} F_x \tilde{x}(t) + T_{sel} G_x \bm{\Delta U}
+\end{equation}
+
+A matriz $T_{sel}$ é estruturada em blocos diagonais onde cada bloco seleciona os primeiros $n_x$ elementos de cada passo do horizonte:
+\begin{equation}
+T_{sel} = \begin{bmatrix} 
+\begin{bmatrix} I_{n_x} & \bm{0}_{n_x \times n_u} \end{bmatrix} & \bm{0} & \dots & \bm{0} \\
+\bm{0} & \begin{bmatrix} I_{n_x} & \bm{0}_{n_x \times n_u} \end{bmatrix} & \dots & \bm{0} \\
+\vdots & \vdots & \ddots & \vdots \\
+\bm{0} & \bm{0} & \dots & \begin{bmatrix} I_{n_x} & \bm{0}_{n_x \times n_u} \end{bmatrix}
+\end{bmatrix}
+\end{equation}
+
+Definindo as matrizes de predição física $F_{xf} = T_{sel} F_x$ e $G_{xf} = T_{sel} G_x$, escrevemos:
+\begin{equation}
+\bm{X}_f = F_{xf} \tilde{x}(t) + G_{xf} \bm{\Delta U}
+\end{equation}
+
+\subsection{Expansão da Função Objetivo para Programação Quadrática}
+\label{subsec:expansao}
+Definimos os erros nominais (resposta livre sem novos incrementos menos as trajetórias de referência alvos) para estados e saídas como:
+\begin{align}
+\bm{e}_x &= F_{xf} \tilde{x}(t) - \bm{X}_{\text{ref}} \\
+\bm{e}_y &= F_y \tilde{x}(t) + E_{pert} \bm{D} - \bm{Y}_{\text{ref}}
+\end{align}
+
+Com isso, reescrevemos as diferenças em relação às referências:
+\begin{align}
+\bm{X}_f - \bm{X}_{\text{ref}} &= \bm{e}_x + G_{xf} \bm{\Delta U} \\
+\bm{Y} - \bm{Y}_{\text{ref}} &= \bm{e}_y + G_y \bm{\Delta U}
+\end{align}
+
+Substituindo estas expressões na função custo \eqref{eq:custo_original}:
+\begin{align}
+J &= (\bm{e}_x + G_{xf} \bm{\Delta U})^T Q (\bm{e}_x + G_{xf} \bm{\Delta U}) + (\bm{e}_y + G_y \bm{\Delta U})^T S (\bm{e}_y + G_y \bm{\Delta U}) + \bm{\Delta U}^T R \bm{\Delta U} \nonumber \\
+  &= \bm{\Delta U}^T (G_{xf}^T Q G_{xf} + G_y^T S G_y + R) \bm{\Delta U} + 2 (\bm{e}_x^T Q G_{xf} + \bm{e}_y^T S G_y) \bm{\Delta U} + \text{constantes}
+\end{align}
+
+O solver `quadprog` do MATLAB minimiza a seguinte estrutura quadrática padrão:
+\begin{equation}
+\min_{\bm{\Delta U}} \frac{1}{2} \bm{\Delta U}^T H \bm{\Delta U} + f^T \bm{\Delta U}
+\end{equation}
+
+Por comparação direta de termos com a nossa função custo expandida, as matrizes $H$ e $f$ enviadas ao solver são definidas como:
+\begin{align}
+\label{eq:matrizes_qp_quadprog}
+H &= 2 \left( G_{xf}^T Q G_{xf} + G_y^T S G_y + R \right) \\
+f &= 2 \left( \bm{e}_x^T Q G_{xf} + \bm{e}_y^T S G_y \right)^T
+\end{align}
+*(Note que a constante de offset que não depende de $\bm{\Delta U}$ é omitida na otimização).*
+
+\subsection{Propriedades de Otimização e Solução via QP}
+\label{subsec:conclusao}
+A formulação matemática proposta resulta em um problema de otimização quadrático convexo em relação à variável de decisão $\bm{\Delta U}$. Isso ocorre devido à linearidade das equações de predição dos estados e das saídas em relação aos incrementos de controle, associada à definição positiva da matriz de ponderação $R$. Portanto, as matrizes $H$ e $f$ obtidas em \eqref{eq:matrizes_qp_quadprog} definem de forma unívoca e rigorosa o problema a ser resolvido pelo solver \texttt{quadprog} do MATLAB.
+
+\end{document}

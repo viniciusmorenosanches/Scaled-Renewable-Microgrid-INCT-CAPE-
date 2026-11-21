@@ -46,13 +46,8 @@ end
 % Suavizar Pot_pv (muito ruidoso) com média móvel de 10 s
 dat.Pot_pv(1:N_pts) = movmean(dat.Pot_pv(1:N_pts), 100);
 
-% Garantir mínimo de Pot_total e Pot_wt (evita zeros físicos irreais)
-dat.Pot_total(1:N_pts) = max(50, dat.Pot_total(1:N_pts));
-for k = 2:N_pts
-    if dat.Pot_wt(k) < 50
-        dat.Pot_wt(k) = dat.Pot_wt(k-1);
-    end
-end
+% Garantir não-negatividade de Pot_total (evita ruídos negativos irreais)
+dat.Pot_total(1:N_pts) = max(0, dat.Pot_total(1:N_pts));
 
 idx = 1:2:N_pts;   % subsamplear 2x para plotagem mais rápida
 

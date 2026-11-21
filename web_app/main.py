@@ -64,7 +64,10 @@ h2_tare_offset = 0.0
 h2_max_mm = 47.0
 
 import random
-import scipy.io as sio
+try:
+    import scipy.io as sio
+except ImportError:
+    sio = None
 
 # Path to MGCC_microrrede folder
 mgcc_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "MGCC_microrrede")
@@ -95,10 +98,20 @@ if os.path.exists(sol_csv_path):
     except Exception as e:
         print(f"[Profiles] Error loading solar CSV: {e}")
 
-# 3. Load Demand from dados_cenario_24h_reformulado.mat (2400 points in W)
+# 3. Load Demand from referenciaDemanda.csv (primary, zero-dependency) or .mat (if scipy installed)
+demand_csv_path = os.path.join(mgcc_folder, "referenciaDemanda.csv")
 mat_path = os.path.join(mgcc_folder, "dados_cenario_24h_reformulado.mat")
 profiles_db["demand"]["bancada_24h"] = []
-if os.path.exists(mat_path):
+if os.path.exists(demand_csv_path):
+    try:
+        with open(demand_csv_path, "r", encoding="utf-8") as f:
+            for line in f:
+                for x in line.strip().split(","):
+                    if x.strip():
+                        profiles_db["demand"]["bancada_24h"].append(round(float(x.strip()), 1))
+    except Exception as e:
+        print(f"[Profiles] Error loading demand CSV: {e}")
+elif sio is not None and os.path.exists(mat_path):
     try:
         mat_data = sio.loadmat(mat_path)
         if "demanda" in mat_data:

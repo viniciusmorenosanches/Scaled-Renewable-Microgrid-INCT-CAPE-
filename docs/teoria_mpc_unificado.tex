@@ -1,0 +1,343 @@
+\documentclass[12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[brazilian]{babel}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{geometry}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{bm}
+
+\geometry{verbose,tmargin=2.5cm,bmargin=2.5cm,lmargin=2.5cm,rmargin=2.5cm}
+
+\title{Dedução Unificada e Formulação Matemática do Controle Preditivo Baseado em Modelo (MPC) em Espaço de Estados Incremental com Saída Estendida}
+\author{Johannes Fischer}
+\date{Julho de 2026}
+
+\begin{document}
+
+\maketitle
+
+\section{Representação do Sistema Físico}
+
+Considere um sistema linear genérico discreto no tempo com $n_x$ estados físicos, $n_u$ entradas de controle, $n_y$ saídas algébricas e $n_d$ perturbações, representado pelas equações:
+\begin{subequations}
+\label{eq:sistema_fisico}
+\begin{align}
+x(t+1) &= A x(t) + B u(t) + B_d d(t) \\
+y(t) &= D u(t) + E d(t)
+\end{align}
+\end{subequations}
+onde:
+\begin{itemize}
+    \item $x(t) \in \mathbb{R}^{n_x}$ é o vetor de estados físicos do sistema.
+    \item $u(t) \in \mathbb{R}^{n_u}$ é o vetor de controle absoluto.
+    \item $d(t) \in \mathbb{R}^{n_d}$ é o vetor de perturbações externas.
+    \item $y(t) \in \mathbb{R}^{n_y}$ é o vetor de saídas algébricas do sistema.
+    \item $A \in \mathbb{R}^{n_x \times n_x}$, $B \in \mathbb{R}^{n_x \times n_u}$ e $B_d \in \mathbb{R}^{n_x \times n_d}$ são as matrizes dinâmicas de estado.
+    \item $D \in \mathbb{R}^{n_y \times n_u}$ e $E \in \mathbb{R}^{n_y \times n_d}$ são as matrizes de acoplamento direto de saída.
+\end{itemize}
+
+\section{Redefinição do Vetor de Saídas}
+
+Para simplificar a formulação do controle preditivo e permitir o rastreamento simultâneo dos estados físicos e das saídas algébricas em um único índice de erro, define-se um novo vetor de saídas unificado $y_{\text{new}}(t) \in \mathbb{R}^{n_x + n_y}$:
+\begin{equation}
+y_{\text{new}}(t) = \begin{bmatrix} x(t) \\ y(t) \end{bmatrix}
+\end{equation}
+
+Substituindo as equações \eqref{eq:sistema_fisico} na definição de $y_{\text{new}}(t)$, reescreve-se o modelo do sistema físico na forma:
+\begin{subequations}
+\label{eq:sistema_redefinido}
+\begin{align}
+x(t+1) &= A x(t) + B u(t) + B_d d(t) \\
+y_{\text{new}}(t) &= C_{\text{new}} x(t) + D_{\text{new}} u(t) + E_{\text{new}} d(t)
+\end{align}
+\end{subequations}
+onde as novas matrizes de saída do sistema são obtidas pelo empilhamento direto:
+\begin{equation}
+C_{\text{new}} = \begin{bmatrix} I_{n_x} \\ \bm{0}_{n_y \times n_x} \end{bmatrix}_{(n_x+n_y) \times n_x}, \quad
+D_{\text{new}} = \begin{bmatrix} \bm{0}_{n_x \times n_u} \\ D \end{bmatrix}_{(n_x+n_y) \times n_u}, \quad
+E_{\text{new}} = \begin{bmatrix} \bm{0}_{n_x \times n_d} \\ E \end{bmatrix}_{(n_x+n_y) \times n_d}
+\end{equation}
+
+\section{Formulação Incremental Aumentada}
+
+Introduz-se a ação integradora definindo o incremento do sinal de controle $\Delta u(t) \in \mathbb{R}^{n_u}$ como:
+\begin{equation}
+\label{eq:delta_u}
+\Delta u(t) = u(t) - u(t-1) \implies u(t) = u(t-1) + \Delta u(t)
+\end{equation}
+
+Define-se o vetor de estados aumentado $\tilde{x}(t) \in \mathbb{R}^{n_x + n_u}$ agrupando o estado físico absoluto e as entradas de controle aplicadas no passo de tempo anterior:
+\begin{equation}
+\tilde{x}(t) = \begin{bmatrix} x(t) \\ u(t-1) \end{bmatrix}
+\end{equation}
+
+\subsection{Dinâmica de Estados Aumentada}
+Substituindo \eqref{eq:delta_u} na equação de atualização de estados físicos \eqref{eq:sistema_redefinido}a:
+\begin{equation}
+x(t+1) = A x(t) + B u(t-1) + B \Delta u(t) + B_d d(t)
+\end{equation}
+
+Agrupando com a dinâmica de atualização do integrador $u(t) = u(t-1) + \Delta u(t)$, obtém-se o sistema de estados aumentado:
+\begin{equation}
+\label{eq:estado_aumentado_atualizado}
+\tilde{x}(t+1) = \tilde{A} \tilde{x}(t) + \tilde{B} \Delta u(t) + \tilde{B}_d d(t)
+\end{equation}
+onde:
+\begin{equation}
+\tilde{A} = \begin{bmatrix} A & B \\ \bm{0} & I \end{bmatrix}_{(n_x+n_u) \times (n_x+n_u)}, \quad
+\tilde{B} = \begin{bmatrix} B \\ I \end{bmatrix}_{(n_x+n_u) \times n_u}, \quad
+\tilde{B}_d = \begin{bmatrix} B_d \\ \bm{0} \end{bmatrix}_{(n_x+n_u) \times n_d}
+\end{equation}
+
+\subsection{Equação de Saída Aumentada}
+Substituindo a relação $u(t) = u(t-1) + \Delta u(t)$ na equação de saída unificada \eqref{eq:sistema_redefinido}b:
+\begin{align}
+y_{\text{new}}(t) &= C_{\text{new}} x(t) + D_{\text{new}} u(t-1) + D_{\text{new}} \Delta u(t) + E_{\text{new}} d(t) \nonumber \\
+                  &= \begin{bmatrix} C_{\text{new}} & D_{\text{new}} \end{bmatrix} \begin{bmatrix} x(t) \\ u(t-1) \end{bmatrix} + D_{\text{new}} \Delta u(t) + E_{\text{new}} d(t)
+\end{align}
+
+Escrevendo $y_{\text{new}}(t)$ em termos do estado aumentado $\tilde{x}(t)$:
+\begin{equation}
+\label{eq:saida_aumentada_unificada}
+y_{\text{new}}(t) = \tilde{C}_{\text{new}} \tilde{x}(t) + D_{\text{new}} \Delta u(t) + E_{\text{new}} d(t)
+\end{equation}
+onde a matriz de observação aumentada unificada é dada por:
+\begin{equation}
+\tilde{C}_{\text{new}} = \begin{bmatrix} C_{\text{new}} & D_{\text{new}} \end{bmatrix}_{(n_x+n_y) \times (n_x+n_u)}
+\end{equation}
+
+\section{Predições Futuras ao Longo do Horizonte $N$}
+
+Deseja-se prever a trajetória futura da saída unificada ao longo do horizonte de predição $N$. A evolução recursiva do estado predito $\tilde{x}(t+k|t)$ a partir das condições no instante $t$ é descrita por:
+\begin{equation}
+\tilde{x}(t+k|t) = \tilde{A}^k \tilde{x}(t) + \sum_{i=1}^k \tilde{A}^{k-i} \tilde{B} \Delta u(t+i-1) + \sum_{i=1}^k \tilde{A}^{k-i} \tilde{B}_d d(t+i-1)
+\end{equation}
+
+Substituindo a predição do estado $\tilde{x}(t+k|t)$ na equação de saída aumentada \eqref{eq:saida_aumentada_unificada} no passo $t+k$, obtém-se:
+\begin{align}
+\label{eq:predicao_passo_k}
+y_{\text{new}}(t+k|t) ={}& \tilde{C}_{\text{new}} \tilde{A}^k \tilde{x}(t) + \sum_{i=1}^k \tilde{C}_{\text{new}} \tilde{A}^{k-i} \tilde{B} \Delta u(t+i-1) \nonumber \\
+&{}+ D_{\text{new}} \Delta u(t+k) + \sum_{i=1}^k \tilde{C}_{\text{new}} \tilde{A}^{k-i} \tilde{B}_d d(t+i-1) + E_{\text{new}} d(t+k)
+\end{align}
+
+Para fins de ilustração, detalham-se os cálculos de predição para os instantes de tempo $k=1$ e $k=2$:
+\begin{itemize}
+    \item {\bf Para $k=1$:}
+    \begin{align}
+    y_{\text{new}}(t+1|t) &= \tilde{C}_{\text{new}} \tilde{x}(t+1|t) + D_{\text{new}} \Delta u(t+1) + E_{\text{new}} d(t+1) \nonumber \\
+             &= \tilde{C}_{\text{new}} \left[ \tilde{A} \tilde{x}(t) + \tilde{B} \Delta u(t) + \tilde{B}_d d(t) \right] + D_{\text{new}} \Delta u(t+1) + E_{\text{new}} d(t+1) \nonumber \\
+             &= \tilde{C}_{\text{new}}\tilde{A} \tilde{x}(t) + \tilde{C}_{\text{new}}\tilde{B} \Delta u(t) + D_{\text{new}} \Delta u(t+1) + \tilde{C}_{\text{new}}\tilde{B}_d d(t) + E_{\text{new}} d(t+1)
+    \end{align}
+    
+    \item {\bf Para $k=2$:}
+    \begin{align}
+    y_{\text{new}}(t+2|t) &= \tilde{C}_{\text{new}} \tilde{x}(t+2|t) + D_{\text{new}} \Delta u(t+2) + E_{\text{new}} d(t+2) \nonumber \\
+             &= \tilde{C}_{\text{new}} \left[ \tilde{A}^2 \tilde{x}(t) + \tilde{A}\tilde{B} \Delta u(t) + \tilde{B} \Delta u(t+1) + \tilde{A}\tilde{B}_d d(t) + \tilde{B}_d d(t+1) \right] \nonumber \\
+             & \quad + D_{\text{new}} \Delta u(t+2) + E_{\text{new}} d(t+2) \nonumber \\
+             &= \tilde{C}_{\text{new}}\tilde{A}^2 \tilde{x}(t) + \tilde{C}_{\text{new}}\tilde{A}\tilde{B} \Delta u(t) + \tilde{C}_{\text{new}}\tilde{B} \Delta u(t+1) + D_{\text{new}} \Delta u(t+2) \nonumber \\
+             & \quad + \tilde{C}_{\text{new}}\tilde{A}\tilde{B}_d d(t) + \tilde{C}_{\text{new}}\tilde{B}_d d(t+1) + E_{\text{new}} d(t+2)
+    \end{align}
+\end{itemize}
+
+Empilhando as saídas previstas, perturbações e incrementos futuros de controle sobre os horizontes de predição $N$ e controle $N_u$, definem-se os seguintes vetores acumulados:
+\begin{equation}
+\bm{Y}_{\text{new}} = \begin{bmatrix} y_{\text{new}}(t+1|t) \\ \vdots \\ y_{\text{new}}(t+N|t) \end{bmatrix}_{N(n_x+n_y) \times 1}, \quad
+\bm{\Delta U} = \begin{bmatrix} \Delta u(t) \\ \vdots \\ \Delta u(t+N_u-1) \end{bmatrix}_{N_u n_u \times 1}, \quad
+\bm{D} = \begin{bmatrix} d(t) \\ \vdots \\ d(t+N) \end{bmatrix}_{(N+1)n_d \times 1}
+\end{equation}
+
+A predição de trajetória da saída unificada é expressa matricialmente por:
+\begin{equation}
+\label{eq:saida_matricial_final}
+\bm{Y}_{\text{new}} = F_y \tilde{x}(t) + G_y \bm{\Delta U} + G_d \bm{D}
+\end{equation}
+onde:
+\begin{equation}
+F_y = \begin{bmatrix} \tilde{C}_{\text{new}}\tilde{A} \\ \tilde{C}_{\text{new}}\tilde{A}^2 \\ \vdots \\ \tilde{C}_{\text{new}}\tilde{A}^N \end{bmatrix}_{N(n_x+n_y) \times (n_x+n_u)}
+\end{equation}
+\begin{equation}
+G_y = \begin{bmatrix}
+\tilde{C}_{\text{new}}\tilde{B} & D_{\text{new}} & \bm{0} & \dots & \bm{0} \\
+\tilde{C}_{\text{new}}\tilde{A}\tilde{B} & \tilde{C}_{\text{new}}\tilde{B} & D_{\text{new}} & \dots & \bm{0} \\
+\vdots & \vdots & \ddots & \ddots & \vdots \\
+\tilde{C}_{\text{new}}\tilde{A}^{N-2}\tilde{B} & \tilde{C}_{\text{new}}\tilde{A}^{N-3}\tilde{B} & \dots & \tilde{C}_{\text{new}}\tilde{B} & D_{\text{new}} \\
+\tilde{C}_{\text{new}}\tilde{A}^{N-1}\tilde{B} & \tilde{C}_{\text{new}}\tilde{A}^{N-2}\tilde{B} & \dots & \tilde{C}_{\text{new}}\tilde{A}\tilde{B} & \tilde{C}_{\text{new}}\tilde{B}
+\end{bmatrix}_{N(n_x+n_y) \times N_u n_u}
+\end{equation}
+\begin{equation}
+G_d = \begin{bmatrix}
+\tilde{C}_{\text{new}}\tilde{B}_d & E_{\text{new}} & \bm{0} & \dots & \bm{0} \\
+\tilde{C}_{\text{new}}\tilde{A}\tilde{B}_d & \tilde{C}_{\text{new}}\tilde{B}_d & E_{\text{new}} & \dots & \bm{0} \\
+\vdots & \vdots & \ddots & \ddots & \vdots \\
+\tilde{C}_{\text{new}}\tilde{A}^{N-1}\tilde{B}_d & \tilde{C}_{\text{new}}\tilde{A}^{N-2}\tilde{B}_d & \dots & \tilde{C}_{\text{new}}\tilde{B}_d & E_{\text{new}}
+\end{bmatrix}_{N(n_x+n_y) \times (N+1)n_d}
+\end{equation}
+
+\section{Controlador Sem Restrições (Solução Analítica)}
+
+\subsection{Função Objetivo}
+A função objetivo a ser minimizada busca realizar o rastreamento da trajetória de referência unificada $\bm{Y}_{\text{new,ref}} \in \mathbb{R}^{N(n_x+n_y)}$ atenuando o esforço de controle incremental:
+\begin{equation}
+\label{eq:custo_original}
+J = (\bm{Y}_{\text{new}} - \bm{Y}_{\text{new,ref}})^T \mathcal{Q} (\bm{Y}_{\text{new}} - \bm{Y}_{\text{new,ref}}) + \bm{\Delta U}^T R \bm{\Delta U}
+\end{equation}
+onde $\mathcal{Q} \in \mathbb{R}^{N(n_x+n_y) \times N(n_x+n_y)}$ e $R \in \mathbb{R}^{N_u n_u \times N_u n_u}$ são as matrizes bloco-diagonais de ponderação do erro e do controle.
+
+\subsection{Expansão Matemática e Minimização}
+Definindo o vetor de erro nominal (resposta livre e de perturbação deduzido de referências) como:
+\begin{equation}
+\bm{e}_y = F_y \tilde{x}(t) + G_d \bm{D} - \bm{Y}_{\text{new,ref}}
+\end{equation}
+
+Substituindo \eqref{eq:saida_matricial_final} em \eqref{eq:custo_original}:
+\begin{align}
+J &= (\bm{e}_y + G_y \bm{\Delta U})^T \mathcal{Q} (\bm{e}_y + G_y \bm{\Delta U}) + \bm{\Delta U}^T R \bm{\Delta U} \nonumber \\
+  &= \bm{\Delta U}^T \left( G_y^T \mathcal{Q} G_y + R \right) \bm{\Delta U} + 2 \left( \bm{e}_y^T \mathcal{Q} G_y \right) \bm{\Delta U} + \bm{e}_y^T \mathcal{Q} \bm{e}_y
+\end{align}
+
+Calculando o gradiente de $J$ com relação a $\bm{\Delta U}$ e impondo a condição de primeira ordem $\frac{\partial J}{\partial \bm{\Delta U}} = \bm{0}$, obtém-se:
+\begin{equation}
+2 \left( G_y^T \mathcal{Q} G_y + R \right) \bm{\Delta U} + 2 G_y^T \mathcal{Q} \bm{e}_y = \bm{0}
+\end{equation}
+Como a matriz $\left( G_y^T \mathcal{Q} G_y + R \right)$ é definida positiva (para $R > 0$), a solução analítica ótima do incremento é:
+\begin{equation}
+\label{eq:solucao_analitica_completa}
+\bm{\Delta U}^* = -\left( G_y^T \mathcal{Q} G_y + R \right)^{-1} G_y^T \mathcal{Q} \bm{e}_y
+\end{equation}
+
+Seguindo a política do horizonte deslizante, apenas a primeira ação de controle da sequência é de fato implementada ao sistema a cada período de amostragem:
+\begin{equation}
+\Delta u(t) = K_{\text{mpc}} (\bm{Y}_{\text{new,ref}} - \bm{Y}_{\text{livre}})
+\end{equation}
+onde:
+\begin{align}
+\bm{Y}_{\text{livre}} &= F_y \tilde{x}(t) + G_d \bm{D} \\
+K_{\text{mpc}} &= \text{primeira linha bloco de } \left( G_y^T \mathcal{Q} G_y + R \right)^{-1} G_y^T \mathcal{Q}
+\end{align}
+
+O sinal absoluto final de atuação do controlador é atualizado recursivamente por:
+\begin{equation}
+u(t) = u(t-1) + \Delta u(t)
+\end{equation}
+
+O pseudocódigo associado à simulação do controle irrestrito está resumido no Algoritmo \ref{alg:mpc_irrestrito}.
+
+\begin{algorithm}[H]
+\caption{Algoritmo MPC Incremental Sem Restrições}
+\label{alg:mpc_irrestrito}
+\begin{algorithmic}[1]
+\STATE {\bf Fora do Loop (Pré-computação):}
+\STATE Definir horizontes $N, N_u$, pesos $\mathcal{Q}, R$, e matrizes dinâmicas do sistema físico.
+\STATE Computar matrizes aumentadas: $\tilde{A}, \tilde{B}, \tilde{B}_d, \tilde{C}_{\text{new}}$.
+\STATE Montar as matrizes de predição: $F_y, G_y, G_d$.
+\STATE Computar o ganho estático de controle: $K_{\text{mpc}} = \text{bloco}_1\left\{ (G_y^T \mathcal{Q} G_y + R)^{-1} G_y^T \mathcal{Q} \right\}$.
+\STATE Inicializar simulação: $x(0)$, $u(-1) = \bm{0}$.
+\STATE {\bf Loop de Controle (A cada instante $t$):}
+\STATE Obter vetor de estado físico atual $x(t)$, distúrbios atuais $d(t)$, e referências futuras $\bm{Y}_{\text{new,ref}}$.
+\STATE Atualizar vetor de estados aumentado: $\tilde{x}(t) = [x(t)^T \quad u(t-1)^T]^T$.
+\STATE Montar o vetor de trajetórias futuras das perturbações projetadas: $\bm{D}$.
+\STATE Calcular a resposta livre total do sistema: $\bm{Y}_{\text{livre}} = F_y \tilde{x}(t) + G_d \bm{D}$.
+\STATE Calcular o incremento de atuação ótimo: $\Delta u(t) = K_{\text{mpc}} (\bm{Y}_{\text{new,ref}} - \bm{Y}_{\text{livre}})$.
+\STATE Calcular controle absoluto: $u(t) = u(t-1) + \Delta u(t)$.
+\STATE Aplicar sinal $u(t)$ ao atuador e atualizar histórico: $u(t-1) \leftarrow u(t)$.
+\end{algorithmic}
+\end{algorithm}
+
+\section{Controlador Com Restrições (Formulação QP / \texttt{quadprog})}
+
+Caso o sistema apresente limites operacionais rígidos associados às variações das ações de controle, comandos absolutos e restrições nos limites físicos da saída (como níveis de carga do sistema de armazenamento), o problema de otimização deve ser formulado na forma de Programação Quadrática (QP) sob restrições lineares de desigualdade.
+
+\subsection{Formulação Matemática das Inequações}
+
+\subsubsection{Restrições de incremento de controle ($\Delta u$):}
+Limitam o gradiente temporal das ações de atuações físicas para mitigar o desgaste mecânico ou elétrico dos conversores:
+\begin{equation}
+\bm{\Delta U}_{\text{min}} \le \bm{\Delta U} \le \bm{\Delta U}_{\text{max}} \implies 
+\begin{bmatrix} I \\ -I \end{bmatrix} \bm{\Delta U} \le \begin{bmatrix} \bm{\Delta U}_{\text{max}} \\ -\bm{\Delta U}_{\text{min}} \end{bmatrix}
+\end{equation}
+
+\subsubsection{Restrições de atuação absoluta ($u$):}
+Como o sinal absoluto $u(t+k)$ depende da integração dos incrementos anteriores, a trajetória do controle $\bm{U} = [u(t)^T \quad \dots \quad u(t+N_u-1)^T]^T$ é reescrita como:
+\begin{equation}
+\bm{U} = \bm{U}_{\text{prev}} + M \bm{\Delta U}
+\end{equation}
+onde $\bm{U}_{\text{prev}} = [u(t-1)^T \quad \dots \quad u(t-1)^T]^T \in \mathbb{R}^{N_u n_u}$ e $M$ é a matriz de integração bloco-triangular:
+\begin{equation}
+M = \begin{bmatrix} 
+I_{n_u} & \bm{0} & \dots & \bm{0} \\
+I_{n_u} & I_{n_u} & \dots & \bm{0} \\
+\vdots & \vdots & \ddots & \vdots \\
+I_{n_u} & I_{n_u} & \dots & I_{n_u}
+\end{bmatrix}_{N_u n_u \times N_u n_u}
+\end{equation}
+Assim, a restrição física operacional absoluta $\bm{U}_{\text{min}} \le \bm{U} \le \bm{U}_{\text{max}}$ se traduz para:
+\begin{equation}
+\begin{bmatrix} M \\ -M \end{bmatrix} \bm{\Delta U} \le \begin{bmatrix} \bm{U}_{\text{max}} - \bm{U}_{\text{prev}} \\ -\bm{U}_{\text{min}} + \bm{U}_{\text{prev}} \end{bmatrix}
+\end{equation}
+
+\subsubsection{Restrições físicas da saída estendida ($y_{\text{new}}$):}
+A saída estendida (que engloba estados físicos como $SoC$ e $LOH$, além de saídas como a potência líquida) deve operar dentro de faixas de segurança admissíveis $\bm{Y}_{\text{new,min}} \le \bm{Y}_{\text{new}} \le \bm{Y}_{\text{new,max}}$. Usando a equação de trajetória \eqref{eq:saida_matricial_final}, tem-se:
+\begin{equation}
+\bm{Y}_{\text{new,min}} \le F_y \tilde{x}(t) + G_y \bm{\Delta U} + G_d \bm{D} \le \bm{Y}_{\text{new,max}}
+\end{equation}
+que é reescrita em termos da variável de decisão $\bm{\Delta U}$ como:
+\begin{equation}
+\begin{bmatrix} G_y \\ -G_y \end{bmatrix} \bm{\Delta U} \le \begin{bmatrix} \bm{Y}_{\text{new,max}} - F_y \tilde{x}(t) - G_d \bm{D} \\ -\bm{Y}_{\text{new,min}} + F_y \tilde{x}(t) + G_d \bm{D} \end{bmatrix}
+\end{equation}
+
+\subsection{Agrupamento do Problema de Programação Quadrática}
+
+As inequações são empilhadas em uma única matriz $F$ e vetor $G$ de restrições de desigualdade linear $F \bm{\Delta U} \le G$:
+\begin{equation}
+F = \begin{bmatrix} I \\ -I \\ M \\ -M \\ G_y \\ -G_y \end{bmatrix}, \quad
+G = \begin{bmatrix} 
+\bm{\Delta U}_{\text{max}} \\ 
+-\bm{\Delta U}_{\text{min}} \\ 
+\bm{U}_{\text{max}} - \bm{U}_{\text{prev}} \\ 
+-\bm{U}_{\text{min}} + \bm{U}_{\text{prev}} \\ 
+\bm{Y}_{\text{new,max}} - F_y \tilde{x}(t) - G_d \bm{D} \\ 
+-\bm{Y}_{\text{new,min}} + F_y \tilde{x}(t) + G_d \bm{D} 
+\end{bmatrix}
+\end{equation}
+
+O solver \texttt{quadprog} do MATLAB minimiza a função de custo quadrática de formato padrão:
+\begin{equation}
+\min_{\bm{\Delta U}} \frac{1}{2} \bm{\Delta U}^T H \bm{\Delta U} + f^T \bm{\Delta U} \quad \text{s.a.} \quad F \bm{\Delta U} \le G
+\end{equation}
+onde as matrizes de sintonia enviadas ao otimizador são calculadas por:
+\begin{align}
+\label{eq:matrizes_qp_matlab}
+H &= 2(G_y^T \mathcal{Q} G_y + R) \\
+f &= 2(F_y \tilde{x}(t) + G_d \bm{D} - \bm{Y}_{\text{new,ref}})^T \mathcal{Q} G_y
+\end{align}
+
+O algoritmo completo para implementação computacional do MPC com restrições é apresentado no Algoritmo \ref{alg:mpc_restrito}.
+
+\begin{algorithm}[H]
+\caption{Algoritmo MPC Incremental Com Restrições}
+\label{alg:mpc_restrito}
+\begin{algorithmic}[1]
+\STATE {\bf Fora do Loop (Pré-computação):}
+\STATE Definir limites operacionais: $U_{\text{min}}, U_{\text{max}}$, $\Delta U_{\text{min}}, \Delta U_{\text{max}}$, $Y_{\text{new,min}}, Y_{\text{new,max}}$.
+\STATE Montar as matrizes do modelo aumentado e de predição: $F_y, G_y, G_d, M$.
+\STATE Montar a parte estática da matriz de restrições: $F = [I; -I; M; -M; G_y; -G_y]$.
+\STATE Calcular a matriz Hessiana constante: $H = 2(G_y^T \mathcal{Q} G_y + R)$.
+\STATE Inicializar variáveis físicas da planta: $x(0), u(-1) = \bm{0}$.
+\STATE {\bf Loop de Controle (A cada instante $t$):}
+\STATE Medir os estados físicos $x(t)$, perturbações $d(t)$ e as referências futuras $\bm{Y}_{\text{new,ref}}$.
+\STATE Atualizar estado aumentado $\tilde{x}(t) = [x(t)^T \quad u(t-1)^T]^T$ e trajetórias $\bm{D}$.
+\STATE Computar o termo linear do custo: $f = 2(F_y \tilde{x}(t) + G_d \bm{D} - \bm{Y}_{\text{new,ref}})^T \mathcal{Q} G_y$.
+\STATE Atualizar o vetor linear de restrições $G$ deslocado pelas condições do passo anterior:
+\STATE \quad $G_u \leftarrow \text{limites de } u \text{ deslocados por } u(t-1)$
+\STATE \quad $G_y \leftarrow \text{limites de } y_{\text{new}} \text{ deslocados pela resposta livre } F_y \tilde{x}(t) + G_d \bm{D}$
+\STATE Resolver o problema de otimização quadrática numericamente:
+\STATE \quad $\bm{\Delta U}^* = \text{\bf quadprog}(H, f^T, F, G, [], [], [], [], \bm{\Delta U}_0)$.
+\STATE Extrair o primeiro elemento da sequência: $\Delta u(t) = \bm{\Delta U}^*(1:n_u)$.
+\STATE Calcular a ação absoluta: $u(t) = u(t-1) + \Delta u(t)$.
+\STATE Aplicar sinal $u(t)$ ao sistema físico.
+\STATE Atualizar variáveis passadas para a próxima iteração: $u(t-1) \leftarrow u(t)$, $\bm{\Delta U}_0 \leftarrow \bm{\Delta U}^*$ (warm-start).
+\end{algorithmic}
+\end{algorithm}
+
+\end{document}

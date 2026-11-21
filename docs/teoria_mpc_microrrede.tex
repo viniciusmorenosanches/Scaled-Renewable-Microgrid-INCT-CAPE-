@@ -1,0 +1,304 @@
+\documentclass[12pt,journal,onecolumn]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[brazilian]{babel}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{geometry}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{bm}
+
+\geometry{verbose,tmargin=2.5cm,bmargin=2.5cm,lmargin=2.5cm,rmargin=2.5cm}
+
+\title{Teoria e Formulação do Controle Preditivo Baseado em Modelo (MPC) em Espaço de Estados Incremental aplicado à Microrrede}
+\author{Johannes Fischer}
+\date{Junho de 2026}
+
+\begin{document}
+
+\maketitle
+
+\section{Introdução e Representação em Espaço de Estados}
+
+O controle de microrredes de energia exige o balanceamento de potência em tempo real sob restrições físicas de segurança. Considera-se o modelo linear discreto com período de amostragem $T_s$ descrito na forma de espaço de estados por:
+\begin{subequations}
+\label{eq:sistema_discreto}
+\begin{align}
+x(k+1) &= A_d x(k) + B_d u(k) + B_{dd} d(k) \\
+y(k) &= C_d x(k)
+\end{align}
+\end{subequations}
+onde:
+\begin{itemize}
+    \item $x(k) = [SoC(k) \quad LOH(k)/10 \quad P_{\text{total}}(k)/1000]^T \in \mathbb{R}^3$ é o vetor de estados, representando o estado de carga da bateria, o nível normalizado de hidrogênio e a potência líquida total normalizada em kW.
+    \item $u(k) = [P_c(k)/400 \quad P_d(k)/400 \quad u_{\text{el}}(k) \quad u_{\text{cc}}(k)]^T \in \mathbb{R}^4$ é o vetor de controle, contendo comandos normalizados de carga/descarga da bateria, acionamento do eletrolisador e da célula a combustível.
+    \item $d(k) = [P_{\text{wt}}(k) \quad P_{\text{pv}}(k)]^T \in \mathbb{R}^2$ é a perturbação medida (geração renovável eólica e solar).
+    \item $y(k) \in \mathbb{R}^3$ é a saída controlada, sendo $C_d = I_{3 \times 3}$ para rastreamento completo dos estados.
+\end{itemize}
+
+---
+
+\section{Dedução do Modelo Incremental Aumentado}
+
+Para garantir que o controlador rejeite distúrbios constantes e elimine o erro em regime permanente (ação integradora), além de penalizar o incremento de controle $\Delta u(k) = u(k) - u(k-1)$ ao invés do sinal absoluto de controle $u(k)$, expande-se o espaço de estados original.
+
+Definem-se os incrementos temporais para o estado e as perturbações como:
+\begin{align}
+\Delta x(k+1) &= x(k+1) - x(k) \\
+\Delta d(k) &= d(k) - d(k-1)
+\end{align}
+
+Aplicando a diferença temporal na equação de estados \eqref{eq:sistema_discreto}a:
+\begin{align}
+x(k+1) - x(k) &= A_d (x(k) - x(k-1)) + B_d (u(k) - u(k-1)) + B_{dd} (d(k) - d(k-1)) \nonumber \\
+\Delta x(k+1) &= A_d \Delta x(k) + B_d \Delta u(k) + B_{dd} \Delta d(k)
+\label{eq:delta_x_update}
+\end{align}
+
+A saída atualizada $y(k+1)$ pode ser escrita em termos da saída anterior $y(k)$ e da dinâmica de $\Delta x(k+1)$:
+\begin{align}
+y(k+1) &= C_d x(k+1) \nonumber \\
+       &= C_d (x(k) + \Delta x(k+1)) \nonumber \\
+       &= C_d x(k) + C_d \Delta x(k+1) \nonumber \\
+       &= y(k) + C_d A_d \Delta x(k) + C_d B_d \Delta u(k) + C_d B_{dd} \Delta d(k)
+\label{eq:y_update}
+\end{align}
+
+Define-se o novo vetor de estados aumentado (incremental) $\xi(k) \in \mathbb{R}^6$ como:
+\begin{equation}
+\xi(k) = \begin{bmatrix} \Delta x(k) \\ y(k) \end{bmatrix}
+\end{equation}
+
+Agrupando as equações \eqref{eq:delta_x_update} e \eqref{eq:y_update} na forma matricial, obtém-se o sistema aumentado:
+\begin{subequations}
+\label{eq:sistema_aumentado}
+\begin{align}
+\xi(k+1) &= A_a \xi(k) + B_a \Delta u(k) + B_{da} \Delta d(k) \\
+y(k) &= C_a \xi(k)
+\end{align}
+\end{subequations}
+onde as matrizes aumentadas são definidas por:
+\begin{equation}
+A_a = \begin{bmatrix} A_d & \bm{0}_{3 \times 3} \\ C_d A_d & I_{3 \times 3} \end{bmatrix}, \quad
+B_a = \begin{bmatrix} B_d \\ C_d B_d \end{bmatrix}, \quad
+B_{da} = \begin{bmatrix} B_{dd} \\ C_d B_{dd} \end{bmatrix}, \quad
+C_a = \begin{bmatrix} \bm{0}_{3 \times 3} & I_{3 \times 3} \end{bmatrix}
+\end{equation}
+
+---
+
+\section{Equações de Predição}
+
+Dado o estado aumentado atual $\xi(k)$ no instante $k$, preveem-se as saídas futuras $y(k+j)$ ao longo de um horizonte de predição $N$, sob uma sequência de $N_u$ incrementos de controle futuros. Assume-se que $\Delta u(k+j) = 0$ para $j \ge N_u$. 
+
+Recursivamente, as predições de estado são dadas por:
+\begin{align}
+\xi(k+1|k) &= A_a \xi(k) + B_a \Delta u(k) + B_{da} \Delta d(k) \nonumber \\
+\xi(k+2|k) &= A_a^2 \xi(k) + A_a B_a \Delta u(k) + B_a \Delta u(k+1) + A_a B_{da} \Delta d(k) + B_{da} \Delta d(k+1) \nonumber \\
+&\vdots \nonumber \\
+\xi(k+N|k) &= A_a^N \xi(k) + \sum_{i=1}^{N_u} A_a^{N-i} B_a \Delta u(k+i-1) + \sum_{j=1}^N A_a^{N-j} B_{da} \Delta d(k+j-1)
+\end{align}
+
+Definindo os vetores acumulados de trajetória futura para as saídas previstas $\bm{Y}$, incrementos de controle $\bm{\Delta U}$ e perturbações incrementais $\bm{\Delta D}$:
+\begin{equation}
+\bm{Y} = \begin{bmatrix} y(k+1|k) \\ y(k+2|k) \\ \vdots \\ y(k+N|k) \end{bmatrix}_{3N \times 1}, \quad
+\bm{\Delta U} = \begin{bmatrix} \Delta u(k) \\ \Delta u(k+1) \\ \vdots \\ \Delta u(k+N_u-1) \end{bmatrix}_{4N_u \times 1}, \quad
+\bm{\Delta D} = \begin{bmatrix} \Delta d(k) \\ \Delta d(k+1) \\ \vdots \\ \Delta d(k+N-1) \end{bmatrix}_{2N \times 1}
+\end{equation}
+
+A equação geral de predição de saídas pode ser expressa como:
+\begin{equation}
+\label{eq:predicao_geral}
+\bm{Y} = A_p \xi(k) + B_p \bm{\Delta U} + B_{dp} \bm{\Delta D}
+\end{equation}
+onde as matrizes de predição são estruturadas como:
+\begin{equation}
+A_p = \begin{bmatrix} C_a A_a \\ C_a A_a^2 \\ \vdots \\ C_a A_a^N \end{bmatrix}, \quad
+B_p = \begin{bmatrix} 
+C_a B_a & \bm{0} & \dots & \bm{0} \\
+C_a A_a B_a & C_a B_a & \dots & \bm{0} \\
+\vdots & \vdots & \ddots & \vdots \\
+C_a A_a^{N-1} B_a & C_a A_a^{N-2} B_a & \dots & C_a A_a^{N-N_u} B_a 
+\end{bmatrix}
+\end{equation}
+\begin{equation}
+B_{dp} = \begin{bmatrix} 
+C_a B_{da} & \bm{0} & \dots & \bm{0} \\
+C_a A_a B_{da} & C_a B_{da} & \dots & \bm{0} \\
+\vdots & \vdots & \ddots & \vdots \\
+C_a A_a^{N-1} B_{da} & C_a A_a^{N-2} B_{da} & \dots & C_a B_{da}
+\end{bmatrix}
+\end{equation}
+
+---
+
+\section{Controlador Sem Restrições (Solução Analítica)}
+
+\subsection{Função Objetivo}
+A função custo quadrática penaliza os desvios da saída prevista em relação à trajetória de referência futura $\bm{W} = [w(k+1)^T \quad \dots \quad w(k+N)^T]^T$ e o esforço de controle incremental:
+\begin{equation}
+\label{eq:custo_mpc}
+J = (\bm{Y} - \bm{W})^T Q_p (\bm{Y} - \bm{W}) + \bm{\Delta U}^T R_p \bm{\Delta U}
+\end{equation}
+onde $Q_p = \text{diag}(Q_y, \dots, Q_y)$ e $R_p = \text{diag}(R_u, \dots, R_u)$ são as matrizes de ponderação do erro e do controle.
+
+\subsection{Dedução da Solução Analítica}
+Substituindo a equação de predição \eqref{eq:predicao_geral} em \eqref{eq:custo_mpc} e definindo a resposta livre como $\bm{Y}_{\text{livre}} = A_p \xi(k) + B_{dp} \bm{\Delta D}$, temos:
+\begin{align}
+J &= (B_p \bm{\Delta U} + \bm{Y}_{\text{livre}} - \bm{W})^T Q_p (B_p \bm{\Delta U} + \bm{Y}_{\text{livre}} - \bm{W}) + \bm{\Delta U}^T R_p \bm{\Delta U} \nonumber \\
+  &= \bm{\Delta U}^T (B_p^T Q_p B_p + R_p) \bm{\Delta U} + 2 (\bm{Y}_{\text{livre}} - \bm{W})^T Q_p B_p \bm{\Delta U} + (\bm{Y}_{\text{livre}} - \bm{W})^T Q_p (\bm{Y}_{\text{livre}} - \bm{W})
+\end{align}
+
+Para encontrar o mínimo global irrestrito, calcula-se o gradiente de $J$ em relação a $\bm{\Delta U}$ e iguala-se a zero:
+\begin{equation}
+\frac{\partial J}{\partial \bm{\Delta U}} = 2(B_p^T Q_p B_p + R_p) \bm{\Delta U} + 2 B_p^T Q_p (\bm{Y}_{\text{livre}} - \bm{W}) = \bm{0}
+\end{equation}
+Como $(B_p^T Q_p B_p + R_p)$ é estritamente definida positiva devido a $R_p > 0$, a matriz é inversível, resultando na sequência de controle ótima analítica:
+\begin{equation}
+\label{eq:solucao_analitica}
+\bm{\Delta U}^* = -(B_p^T Q_p B_p + R_p)^{-1} B_p^T Q_p (\bm{Y}_{\text{livre}} - \bm{W})
+\end{equation}
+
+Pelo princípio do horizonte deslizante, apenas a primeira ação de controle da sequência estimada é efetivamente aplicada ao processo:
+\begin{equation}
+\Delta u(k) = K_{\text{mpc}} (\bm{W} - \bm{Y}_{\text{livre}})
+\end{equation}
+onde:
+\begin{equation}
+K_{\text{mpc}} = \text{primeira linha bloco de } (B_p^T Q_p B_p + R_p)^{-1} B_p^T Q_p
+\end{equation}
+
+A ação de controle final aplicada à microrrede é atualizada por:
+\begin{equation}
+u(k) = u(k-1) + \Delta u(k)
+\end{equation}
+
+\subsection{Pseudocódigo do MPC Sem Restrições}
+
+O algoritmo para simulação do MPC sem restrições está detalhado no Algoritmo \ref{alg:mpc_sem_restricoes}.
+
+\begin{algorithm}
+\caption{Controle Preditivo Incremental Sem Restrições}
+\label{alg:mpc_sem_restricoes}
+\begin{algorithmic}[1]
+\STATE {\bf Pré-computação (Fora do loop):}
+\STATE Definir horizontes $N, N_u$, amostragem $Ts$, matrizes $Ad, Bd, Bdd, Cd$.
+\STATE Montar as matrizes do sistema aumentado $Aa, Ba, Bda, Ca$.
+\STATE Calcular recursivamente as matrizes de predição $A_p, B_p$ e $B_{dp}$.
+\STATE Calcular o ganho estático do MPC: $K_{\text{mpc}} = \text{bloco}_1 \left\{ (B_p^T Q_p B_p + R_p)^{-1} B_p^T Q_p \right\}$.
+\STATE Inicializar estados da simulação: $x(0)$, $u(-1) = \bm{0}$, $d(-1) = \bm{0}$.
+\STATE
+\STATE {\bf Loop de Controle (A cada instante $k$):}
+\STATE Ler saída atual $y(k) = C_d x(k)$ e perturbações atuais $d(k)$.
+\STATE Calcular incrementos: $\Delta x(k) = x(k) - x(k-1)$ e $\Delta d(k) = d(k) - d(k-1)$.
+\STATE Montar estado aumentado: $\xi(k) = [\Delta x(k)^T \quad y(k)^T]^T$.
+\STATE Obter referências futuras $\bm{W}$ e perturbações incrementais futuras projetadas $\bm{\Delta D}$ (FF).
+\STATE Estimar a resposta livre: $\bm{Y}_{\text{livre}} = A_p \xi(k) + B_{dp} \bm{\Delta D}$.
+\STATE Calcular o incremento ótimo: $\Delta u(k) = K_{\text{mpc}} (\bm{W} - \bm{Y}_{\text{livre}})$.
+\STATE Atualizar comando absoluto: $u(k) = u(k-1) + \Delta u(k)$.
+\STATE Aplicar sinal $u(k)$ ao processo físico (ou modelo de simulação).
+\STATE Salvar estados para o próximo passo: $x(k-1) \leftarrow x(k)$, $u(k-1) \leftarrow u(k)$, $d(k-1) \leftarrow d(k)$.
+\end{algorithmic}
+\end{algorithm}
+
+---
+
+\section{Controlador Com Restrições (Formulação QP / `quadprog`)}
+
+Quando o sistema opera próximo de limites de carga da bateria, capacidade do tanque de H2 ou saturação dos atuadores, a solução analítica irrestrita torna-se inviável. Deve-se resolver um problema de Programação Quadrática (QP) sujeto a inequações lineares.
+
+\subsection{Formulação Matemática das Restrições}
+
+\subsubsection{Restrições de incremento de controle ($\Delta u$):}
+\begin{equation}
+\bm{\Delta U}_{\text{min}} \le \bm{\Delta U} \le \bm{\Delta U}_{\text{max}} \implies 
+\begin{bmatrix} I \\ -I \end{bmatrix} \bm{\Delta U} \le \begin{bmatrix} \bm{\Delta U}_{\text{max}} \\ -\bm{\Delta U}_{\text{min}} \end{bmatrix}
+\end{equation}
+
+\subsubsection{Restrições de controle absoluto ($u$):}
+Como o sinal absoluto é a integração do incremento: $u(k+j) = u(k-1) + \sum_{i=0}^j \Delta u(k+i)$, podemos escrever vetorialmente:
+\begin{equation}
+\bm{U} = \bm{U}_{\text{prev}} + M \bm{\Delta U}
+\end{equation}
+onde $\bm{U}_{\text{prev}} = \text{repmat}(u(k-1), N_u, 1)$ e $M$ é a matriz de integração triangular:
+\begin{equation}
+M = \begin{bmatrix} 
+I_{4 \times 4} & \bm{0} & \dots & \bm{0} \\
+I_{4 \times 4} & I_{4 \times 4} & \dots & \bm{0} \\
+\vdots & \vdots & \ddots & \vdots \\
+I_{4 \times 4} & I_{4 \times 4} & \dots & I_{4 \times 4}
+\end{bmatrix}_{4N_u \times 4N_u}
+\end{equation}
+Assim, os limites físicos dos atuadores $U_{\text{min}} \le \bm{U} \le U_{\text{max}}$ traduzem-se para $\bm{\Delta U}$ como:
+\begin{equation}
+\begin{bmatrix} M \\ -M \end{bmatrix} \bm{\Delta U} \le \begin{bmatrix} \bm{U}_{\text{max}} - \bm{U}_{\text{prev}} \\ -\bm{U}_{\text{min}} + \bm{U}_{\text{prev}} \end{bmatrix}
+\end{equation}
+
+\subsubsection{Restrições de saída/estado ($y$):}
+Os estados e saídas operam sob limites de segurança rígidos $\bm{Y}_{\text{min}} \le \bm{Y} \le \bm{Y}_{\text{max}}$. Substituindo a equação de predição \eqref{eq:predicao_geral}:
+\begin{equation}
+\bm{Y}_{\text{min}} \le A_p \xi(k) + B_{dp} \bm{\Delta D} + B_p \bm{\Delta U} \le \bm{Y}_{\text{max}}
+\end{equation}
+Que é rearranjado como:
+\begin{equation}
+\begin{bmatrix} B_p \\ -B_p \end{bmatrix} \bm{\Delta U} \le \begin{bmatrix} \bm{Y}_{\text{max}} - A_p \xi(k) - B_{dp} \bm{\Delta D} \\ -\bm{Y}_{\text{min}} + A_p \xi(k) + B_{dp} \bm{\Delta D} \end{bmatrix}
+\end{equation}
+
+\subsection{Agrupamento de Matrizes QP para o MATLAB}
+Definem-se os termos quadráticos e lineares para o solver:
+\begin{align}
+H &= 2(B_p^T Q_p B_p + R_p) \\
+f &= 2(A_p \xi(k) + B_{dp} \bm{\Delta D} - \bm{W})^T Q_p B_p
+\end{align}
+
+A pilha completa de restrições de desigualdade linear $F \bm{\Delta U} \le G$ é montada por:
+\begin{equation}
+F = \begin{bmatrix} I \\ -I \\ M \\ -M \\ B_p \\ -B_p \end{bmatrix}, \quad
+G = \begin{bmatrix} 
+\bm{\Delta U}_{\text{max}} \\ 
+-\bm{\Delta U}_{\text{min}} \\ 
+\bm{U}_{\text{max}} - \bm{U}_{\text{prev}} \\ 
+-\bm{U}_{\text{min}} + \bm{U}_{\text{prev}} \\ 
+\bm{Y}_{\text{max}} - A_p \xi(k) - B_{dp} \bm{\Delta D} \\ 
+-\bm{Y}_{\text{min}} + A_p \xi(k) + B_{dp} \bm{\Delta D} 
+\end{bmatrix}
+\end{equation}
+
+A otimização é solucionada a cada passo de amostragem por:
+\begin{equation}
+\bm{\Delta U}^* = \text{quadprog}(H, f^T, F, G)
+\end{equation}
+
+\subsection{Pseudocódigo do MPC Com Restrições}
+
+O algoritmo para simulação do MPC com restrições e `quadprog` está detalhado no Algoritmo \ref{alg:mpc_com_restricoes}.
+
+\begin{algorithm}
+\caption{Controle Preditivo Incremental Com Restrições via QP}
+\label{alg:mpc_com_restricoes}
+\begin{algorithmic}[1]
+\STATE {\bf Pré-computação (Fora do loop):}
+\STATE Definir horizontes $N, N_u$, limites $U_{\text{min}}, U_{\text{max}}$, $\Delta U_{\text{min}}, \Delta U_{\text{max}}$, $Y_{\text{min}}, Y_{\text{max}}$.
+\STATE Montar as matrizes do sistema aumentado $Aa, Ba, Bda, Ca$.
+\STATE Calcular as matrizes de predição $A_p, B_p$ e $B_{dp}$ e a matriz de integração $M$.
+\STATE Montar as submatrizes fixas do limitador: $F = [I; -I; M; -M; B_p; -B_p]$.
+\STATE Calcular a matriz Hessiana simétrica: $H = 2(B_p^T Q_p B_p + R_p)$.
+\STATE Inicializar variáveis da simulação: $x(0)$, $u(-1) = \bm{0}$, $d(-1) = \bm{0}$.
+\STATE
+\STATE {\bf Loop de Controle (A cada instante $k$):}
+\STATE Medir estados reais $x(k)$, perturbações $d(k)$ e referências $\bm{W}$.
+\STATE Calcular incrementos e o estado aumentado: $\xi(k) = [\Delta x(k)^T \quad y(k)^T]^T$.
+\STATE Construir o vetor linear de custo: $f = 2(A_p \xi(k) + B_{dp} \bm{\Delta D} - \bm{W})^T Q_p B_p$.
+\STATE Construir o vetor de perturbação dinâmico $G$:
+\STATE \quad $G(1:2N_u) \leftarrow$ limites de $\Delta U$
+\STATE \quad $G(2N_u+1:4N_u) \leftarrow$ limites de $U$ deslocados por $U_{\text{prev}}(k-1)$
+\STATE \quad $G(4N_u+1:\text{fim}) \leftarrow$ limites de $Y$ deslocados por predição livre $A_p \xi(k) + B_{dp} \bm{\Delta D}$
+\STATE Chamar o otimizador numérico: $\bm{\Delta U}^* = \text{quadprog}(H, f^T, F, G, [], [], [], [], \bm{\Delta U}_0)$.
+\# Onde $\bm{\Delta U}_0$ é a solução anterior transladada (warm-start).
+\STATE Selecionar o primeiro incremento: $\Delta u(k) = \bm{\Delta U}^*(1:4)$.
+\STATE Calcular o sinal absoluto de controle: $u(k) = u(k-1) + \Delta u(k)$.
+\STATE Aplicar sinal $u(k)$ ao processo físico (com relaxamento contínuo para atuadores discretos).
+\STATE Atualizar variáveis passadas para a próxima iteração.
+\end{algorithmic}
+\end{algorithm}
+
+\end{document}

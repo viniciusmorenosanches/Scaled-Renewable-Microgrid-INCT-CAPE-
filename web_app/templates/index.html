@@ -122,6 +122,12 @@
                     <button id="btn-connect" onclick="connectSerial()" class="py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-semibold text-xs tracking-wider transition-colors">CONECTAR</button>
                     <button id="btn-disconnect" onclick="disconnectSerial()" class="py-2.5 px-4 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 disabled:pointer-events-none rounded-lg font-semibold text-xs tracking-wider transition-colors" disabled>DESCONECTAR</button>
                 </div>
+                <button id="btn-webserial" onclick="connectWebSerial()" class="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 rounded-lg font-semibold text-xs tracking-wider transition-colors flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/20">
+                    <span>⚡</span> CONECTAR USB DIRETO (SEM PYTHON)
+                </button>
+                <p id="webserial-hint" class="text-[10px] text-slate-500 leading-tight">
+                    No Chrome ou Edge, clique acima para conectar direto na porta USB do Arduino R4 mesmo sem Python/FastAPI instalado.
+                </p>
             </div>
 
             <hr class="border-slate-800/60">
@@ -382,6 +388,27 @@
         let ws;
         let isConnecting = false;
         let isMockConnected = false;
+        const isStandaloneMode = (window.location.protocol === 'file:');
+
+        // Estado do modo Web Serial API (Chrome/Edge sem servidor Python)
+        let webSerialConnected = false;
+        let webSerialPort = null;
+        let webSerialWriter = null;
+        let webSerialReader = null;
+        let webSerialLoopTimer = null;
+        let webSerialProfileActive = false;
+        let webSerialProfileIdx = 0;
+        let webSerialH2Tare = 0.0;
+        let webSerialH2Max = 47.0;
+        let webSerialLastRawH2 = 0.0;
+        let webSerialSimHistory = [];
+        let webSerialSensors = {
+            H2_Level: 0.0, Pot_cc: 0.0, Pot_total: 0.0, SoC: 60.0,
+            Pot_wt: 0.0, Pot_pv: 0.0, Pc_actual: 0.0, Pd_actual: 0.0
+        };
+        let webSerialControls = {
+            Pc: 0.0, Pd: 0.0, ucc: 0, uel: 0, ref_sol: 0.0, ref_vento: 0.0
+        };
         
         // Modal functions
         function closeSimulationModal() {
@@ -613,6 +640,10 @@
         }
 
         async function tareH2() {
+            if (isStandaloneMode || webSerialConnected) {
+                webSerialH2Tare = webSerialLastRawH2;
+                return;
+            }
             try {
                 await fetch('/api/tare_h2', { method: 'POST' });
             } catch (err) {
@@ -623,6 +654,10 @@
         async function updateH2Max(val) {
             const maxVal = parseFloat(val);
             if (isNaN(maxVal) || maxVal <= 0) return;
+            if (isStandaloneMode || webSerialConnected) {
+                webSerialH2Max = maxVal;
+                return;
+            }
             const formData = new FormData();
             formData.append('max_mm', maxVal);
             try {
@@ -633,6 +668,14 @@
         }
 
         async function setH2MaxCurrent() {
+            if (isStandaloneMode || webSerialConnected) {
+                const currMm = webSerialLastRawH2 - webSerialH2Tare;
+                if (currMm > 0) {
+                    webSerialH2Max = currMm;
+                    document.getElementById('input-h2-max').value = currMm.toFixed(1);
+                }
+                return;
+            }
             try {
                 const res = await fetch('/api/set_h2_max', { method: 'POST' });
                 const data = await res.json();
@@ -645,6 +688,10 @@
         }
 
         async function connectSerial() {
+            if (isStandaloneMode) {
+                alert("Você abriu o arquivo HTML direto sem o servidor Python.\nClique no botão verde 'CONECTAR USB DIRETO (SEM PYTHON)' logo abaixo!");
+                return;
+            }
             const port = document.getElementById('serial-port').value;
             try {
                 const res = await fetch('/api/connect', {
@@ -668,6 +715,11 @@
             }
         }
         async function disconnectSerial() {
+            if (webSerialConnected) {
+                await disconnectWebSerial();
+                return;
+            }
+            if (isStandaloneMode) return;
             try {
                 const res = await fetch('/api/disconnect', { method: 'POST' });
                 const data = await res.json();
@@ -688,6 +740,7 @@
 
         // Select Profile Selection API
         async function selectProfile(type, value) {
+            if (isStandaloneMode || webSerialConnected) return;
             const formData = new FormData();
             formData.append('profile_type', type);
             formData.append('value', value);
@@ -701,6 +754,25 @@
         // Toggle loaded profile execution API
         async function toggleProfile() {
             const btn = document.getElementById('btn-profile-toggle');
+            if (webSerialConnected) {
+                if (btn.innerText === "INICIAR") {
+                    resetGraphHistory();
+                    webSerialProfileIdx = 0;
+                    webSerialSimHistory = [];
+                    webSerialProfileActive = true;
+                    btn.innerText = "PARAR";
+                    btn.classList.replace('bg-indigo-600', 'bg-rose-600');
+                    btn.classList.replace('hover:bg-indigo-500', 'hover:bg-rose-500');
+                } else {
+                    webSerialProfileActive = false;
+                    btn.innerText = "INICIAR";
+                    btn.classList.replace('bg-rose-600', 'bg-indigo-600');
+                    btn.classList.replace('hover:bg-rose-500', 'hover:bg-indigo-500');
+                    drawWebSerialReport();
+                }
+                return;
+            }
+            if (isStandaloneMode) return;
             if (btn.innerText === "INICIAR") {
                 // We are starting.
                 resetGraphHistory();
@@ -831,8 +903,9 @@
             const btnProfile = document.getElementById('btn-profile-toggle');
             const lblScenario = document.getElementById('profile-scenario-label');
             
-            // We only enable it if we are connected AND NOT in manual mode AND NOT mock
-            if (document.getElementById('status-text').innerText !== 'Desconectado') {
+            // We only enable it if we are connected (backend or WebSerial) AND NOT in manual mode AND NOT mock
+            const isPhysicallyConnected = webSerialConnected || (!isStandaloneMode && document.getElementById('status-text').innerText !== 'Desconectado');
+            if (isPhysicallyConnected) {
                 if (mode === 'manual' || isMockConnected) {
                     btnProfile.disabled = true;
                     btnProfile.classList.add('opacity-50', 'pointer-events-none');
@@ -869,10 +942,19 @@
             const Q_h2 = parseFloat(document.getElementById('slider-q-h2').value);
             const Q_load = parseFloat(document.getElementById('slider-q-load').value);
 
+            webSerialControls.Pc = Pc < 0 ? Math.abs(Pc) : 0;
+            webSerialControls.Pd = Pc > 0 ? Pc : 0;
+            webSerialControls.ucc = ucc;
+            webSerialControls.uel = uel;
+            webSerialControls.ref_sol = ref_sol;
+            webSerialControls.ref_vento = ref_vento;
+
+            if (isStandaloneMode || webSerialConnected) return;
+
             const formData = new FormData();
             formData.append('controller', mode);
-            formData.append('Pc', Pc < 0 ? Math.abs(Pc) : 0);
-            formData.append('Pd', Pc > 0 ? Pc : 0);
+            formData.append('Pc', webSerialControls.Pc);
+            formData.append('Pd', webSerialControls.Pd);
             formData.append('ucc', ucc);
             formData.append('uel', uel);
             formData.append('ref_sol', ref_sol);
@@ -937,6 +1019,7 @@
 
         // Fetch status
         async function fetchStatus() {
+            if (isStandaloneMode || webSerialConnected) return;
             try {
                 const res = await fetch('/api/status');
                 const data = await res.json();
@@ -1156,10 +1239,265 @@
             }
         }
 
+        // =========================================================================
+        //  Modo Web Serial API Direto no Navegador (Zero-Python / Standalone)
+        // =========================================================================
+
+        async function connectWebSerial() {
+            if (!("serial" in navigator)) {
+                alert("Seu navegador não suporta Web Serial API.\nPor favor, abra este arquivo no Google Chrome ou Microsoft Edge.");
+                return;
+            }
+            try {
+                webSerialPort = await navigator.serial.requestPort();
+                await webSerialPort.open({ baudRate: 115200 });
+                webSerialConnected = true;
+
+                // Atualiza botões e status na UI
+                document.getElementById('status-dot').className = "w-2.5 h-2.5 rounded-full bg-emerald-500 glow-green";
+                document.getElementById('status-text').innerText = "USB Direto Conectado (115200)";
+                document.getElementById('btn-connect').disabled = true;
+                document.getElementById('btn-webserial').disabled = true;
+                document.getElementById('btn-webserial').classList.add('opacity-50', 'pointer-events-none');
+                document.getElementById('btn-disconnect').disabled = false;
+
+                resetGraphHistory();
+                await updateSettings();
+
+                // Aguarda 2s pelo auto-reset serial do Arduino R4
+                setTimeout(() => {
+                    if (!webSerialConnected) return;
+                    startWebSerialReader();
+                    webSerialLoopTimer = setInterval(sendWebSerialControlPacket, 100);
+                }, 2000);
+            } catch (err) {
+                console.error("[WebSerial] Erro ao conectar:", err);
+                if (err.name !== "NotFoundError") {
+                    alert("Falha ao abrir porta USB Serial: " + err.message);
+                }
+            }
+        }
+
+        async function disconnectWebSerial() {
+            webSerialConnected = false;
+            webSerialProfileActive = false;
+            if (webSerialLoopTimer) {
+                clearInterval(webSerialLoopTimer);
+                webSerialLoopTimer = null;
+            }
+            // Envia comando zero de segurança antes de fechar
+            if (webSerialPort && webSerialPort.writable) {
+                try {
+                    const encoder = new TextEncoder();
+                    const writer = webSerialPort.writable.getWriter();
+                    await writer.write(encoder.encode("0.00,0.00,0,0,0.00,0.00\n"));
+                    writer.releaseLock();
+                } catch (e) {}
+            }
+            if (webSerialReader) {
+                try { await webSerialReader.cancel(); } catch (e) {}
+                webSerialReader = null;
+            }
+            if (webSerialPort) {
+                try { await webSerialPort.close(); } catch (e) {}
+                webSerialPort = null;
+            }
+            document.getElementById('status-dot').className = "w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse glow-red";
+            document.getElementById('status-text').innerText = isStandaloneMode
+                ? "Modo Standalone (Sem Python) — Use Conexão USB Direta"
+                : "Desconectado";
+            document.getElementById('btn-connect').disabled = false;
+            document.getElementById('btn-webserial').disabled = false;
+            document.getElementById('btn-webserial').classList.remove('opacity-50', 'pointer-events-none');
+            document.getElementById('btn-disconnect').disabled = true;
+            await updateSettings();
+        }
+
+        async function sendWebSerialControlPacket() {
+            if (!webSerialConnected || !webSerialPort || !webSerialPort.writable) return;
+
+            const mode = document.querySelector('input[name="mode"]:checked').value;
+            let Pc = 0.0, Pd = 0.0, ucc = 0, uel = 0, ref_sol = 0.0, ref_vento = 0.0, demand_val = 0.0;
+
+            if (webSerialProfileActive) {
+                if (webSerialProfileIdx >= 1200) {
+                    webSerialProfileActive = false;
+                    const btn = document.getElementById('btn-profile-toggle');
+                    btn.innerText = "INICIAR";
+                    btn.classList.replace('bg-rose-600', 'bg-indigo-600');
+                    btn.classList.replace('hover:bg-rose-500', 'hover:bg-indigo-500');
+                    drawWebSerialReport();
+                } else {
+                    const t_hour = (webSerialProfileIdx / 1200.0) * 24.0;
+                    if (t_hour > 6.0 && t_hour < 18.0) {
+                        ref_sol = (200.0 / 150.0) * Math.sin((t_hour - 6.0) * Math.PI / 12.0);
+                    }
+                    ref_vento = Math.max(0.45, Math.min(1.55, 0.95 + 0.45 * Math.sin(t_hour * 1.3)));
+                    demand_val = 80.0 + 100.0 * Math.exp(-((t_hour - 8.0) ** 2) / 2.0) + 150.0 * Math.exp(-((t_hour - 19.0) ** 2) / 4.0);
+
+                    // Controle heurístico local no navegador quando rodando cenário sem Python
+                    const net_gen = webSerialSensors.Pot_pv + webSerialSensors.Pot_wt;
+                    const diff = demand_val - net_gen;
+                    const soc = webSerialSensors.SoC;
+                    if (diff > 5.0) {
+                        if (soc > 20.0) Pd = Math.min(diff, 250.0);
+                        if (diff - Pd > 30.0 && (webSerialSensors.H2_Level - webSerialH2Tare) > 3.0) ucc = 1;
+                    } else if (diff < -5.0) {
+                        const excess = -diff;
+                        if (soc < 95.0) Pc = Math.min(excess, 250.0);
+                        if (excess - Pc > 15.0 && (webSerialSensors.H2_Level - webSerialH2Tare) < webSerialH2Max - 2.0) uel = 1;
+                    }
+                    webSerialProfileIdx++;
+                }
+            } else if (mode === 'manual') {
+                Pc = webSerialControls.Pc;
+                Pd = webSerialControls.Pd;
+                ucc = webSerialControls.ucc;
+                uel = webSerialControls.uel;
+                ref_sol = webSerialControls.ref_sol;
+                ref_vento = webSerialControls.ref_vento;
+            }
+
+            webSerialSensors.Demand = demand_val;
+            webSerialControls.currentDemand = demand_val;
+            webSerialControls.currentRefSol = ref_sol;
+            webSerialControls.currentRefVento = ref_vento;
+            webSerialControls.currentUcc = ucc;
+            webSerialControls.currentUel = uel;
+
+            const line = `${Pc.toFixed(2)},${Pd.toFixed(2)},${ucc},${uel},${ref_sol.toFixed(2)},${ref_vento.toFixed(2)}\n`;
+            try {
+                const writer = webSerialPort.writable.getWriter();
+                await writer.write(new TextEncoder().encode(line));
+                writer.releaseLock();
+            } catch (err) {
+                console.error("[WebSerial] Erro ao escrever:", err);
+            }
+        }
+
+        async function startWebSerialReader() {
+            const textDecoder = new TextDecoderStream();
+            const readableClosed = webSerialPort.readable.pipeTo(textDecoder.writable).catch(() => {});
+            webSerialReader = textDecoder.readable.getReader();
+            let buffer = "";
+
+            try {
+                while (webSerialConnected) {
+                    const { value, done } = await webSerialReader.read();
+                    if (done) break;
+                    buffer += value;
+                    let lines = buffer.split("\n");
+                    buffer = lines.pop();
+                    for (const rawLine of lines) {
+                        const trimmed = rawLine.trim();
+                        if (!trimmed) continue;
+                        const parts = trimmed.split(",").map(Number);
+                        if (parts.length >= 8 && parts.every(n => !isNaN(n))) {
+                            // Pacote R4: Level_H2, Pot_cc, Pot_total, SoC, Pot_wt, Pot_pv, Pc, Pd
+                            webSerialLastRawH2 = parts[0];
+                            const h2_mm = parts[0] - webSerialH2Tare;
+                            const h2_pct = Math.max(0.0, Math.min(100.0, webSerialH2Max > 0 ? (h2_mm / webSerialH2Max * 100.0) : 0.0));
+                            const rawSoc = parts[3];
+                            const soc_pct = Math.max(0.0, Math.min(100.0, rawSoc <= 1.05 ? rawSoc * 100.0 : rawSoc));
+                            const pot_cc = parts[1];
+                            const pot_wt = parts[4];
+                            const pot_pv = parts[5];
+                            const pc_act = parts[6];
+                            const pd_act = parts[7];
+
+                            webSerialSensors.H2_Level = parts[0];
+                            webSerialSensors.SoC = soc_pct;
+                            webSerialSensors.Pot_wt = pot_wt;
+                            webSerialSensors.Pot_pv = pot_pv;
+                            webSerialSensors.Pot_cc = pot_cc;
+
+                            const uel_cmd = webSerialControls.currentUel || 0;
+                            const ucc_cmd = webSerialControls.currentUcc || 0;
+                            const h2_contrib = pot_cc - (uel_cmd === 1 ? 10.0 : 0.0);
+                            const total_sup = pot_pv + pot_wt + h2_contrib - pc_act + pd_act;
+                            const dem = webSerialControls.currentDemand || 0.0;
+
+                            const payload = {
+                                type: "telemetry",
+                                connected: true,
+                                Solar: pot_pv,
+                                Wind: pot_wt,
+                                Demand: dem,
+                                Battery: pd_act - pc_act,
+                                H2: h2_contrib,
+                                Total_Supply: total_sup,
+                                Deviation: total_sup - dem,
+                                SoC: soc_pct,
+                                H2_Level: h2_mm,
+                                H2_Pct: h2_pct,
+                                H2_Max_mm: webSerialH2Max,
+                                Pc_actual: pc_act,
+                                Pd_actual: pd_act,
+                                profile_active: webSerialProfileActive,
+                                profile_index: webSerialProfileIdx
+                            };
+
+                            if (webSerialProfileActive) {
+                                webSerialSimHistory.push({
+                                    Step: webSerialProfileIdx,
+                                    Ref_Sol: webSerialControls.currentRefSol || 0,
+                                    Pot_Solar_Real: pot_pv,
+                                    Ref_Vento: webSerialControls.currentRefVento || 0,
+                                    Pot_Vento_Real: pot_wt,
+                                    Demanda: dem,
+                                    Pc_Aplicado: pc_act,
+                                    Pd_Aplicado: pd_act,
+                                    SoC: soc_pct,
+                                    Tanque_H2_Pct: h2_pct
+                                });
+                            }
+                            updateUI(payload);
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error("[WebSerial] Leitura encerrada:", err);
+            }
+        }
+
+        function drawWebSerialReport() {
+            if (!webSerialSimHistory || webSerialSimHistory.length === 0) return;
+            const steps = webSerialSimHistory.map(r => r.Step);
+            const traces = [
+                { x: steps, y: webSerialSimHistory.map(r => r.Ref_Sol), name: 'Ref Solar', mode: 'lines', line: { color: '#fbbf24', dash: 'dash' } },
+                { x: steps, y: webSerialSimHistory.map(r => r.Pot_Solar_Real), name: 'Pot Solar Real', mode: 'lines', line: { color: '#f59e0b', width: 2 } },
+                { x: steps, y: webSerialSimHistory.map(r => r.Ref_Vento), name: 'Ref Vento', mode: 'lines', line: { color: '#60a5fa', dash: 'dash' } },
+                { x: steps, y: webSerialSimHistory.map(r => r.Pot_Vento_Real), name: 'Pot Vento Real', mode: 'lines', line: { color: '#3b82f6', width: 2 } },
+                { x: steps, y: webSerialSimHistory.map(r => r.Demanda), name: 'Demanda', mode: 'lines', line: { color: '#ef4444', width: 2 } },
+                { x: steps, y: webSerialSimHistory.map(r => r.Pc_Aplicado), name: 'Pc', mode: 'lines', line: { color: '#10b981' } },
+                { x: steps, y: webSerialSimHistory.map(r => r.Pd_Aplicado), name: 'Pd', mode: 'lines', line: { color: '#8b5cf6' } },
+                { x: steps, y: webSerialSimHistory.map(r => r.SoC), name: 'SoC (%)', mode: 'lines', yaxis: 'y2', line: { color: '#a78bfa', dash: 'dot' } },
+                { x: steps, y: webSerialSimHistory.map(r => r.Tanque_H2_Pct), name: 'Tanque H2 (%)', mode: 'lines', yaxis: 'y2', line: { color: '#38bdf8', dash: 'dot' } }
+            ];
+            const layout = {
+                paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)',
+                font: { color: '#94a3b8' }, margin: { t: 40, r: 40, l: 40, b: 40 },
+                title: { text: "Dinâmica da Microrrede (WebSerial Direto)" }, hovermode: 'x unified',
+                xaxis: { title: "Tempo (Passos)", showgrid: true, gridcolor: '#1e293b' },
+                yaxis: { title: "Potência (W)", showgrid: true, gridcolor: '#1e293b' },
+                yaxis2: { title: "Níveis de Armazenamento (%)", overlaying: 'y', side: 'right', range: [0, 105], showgrid: false },
+                legend: { orientation: 'h', y: -0.15 }
+            };
+            document.getElementById('simulation-modal').classList.remove('hidden');
+            Plotly.newPlot('static-plot', traces, layout, {responsive: true});
+        }
+
         // Initialize elements on load
         window.onload = function() {
-            fetchStatus();
-            initWebSocket();
+            if (isStandaloneMode) {
+                document.getElementById('status-text').innerText = "Modo Standalone (Sem Python) — Use Conexão USB Direta";
+                document.getElementById('btn-connect').disabled = true;
+                document.getElementById('btn-connect').classList.add('opacity-50', 'pointer-events-none');
+                updateSettings();
+            } else {
+                fetchStatus();
+                initWebSocket();
+            }
             
             // Restore sidebar collapse state
             if (localStorage.getItem('sidebarCollapsed') === 'true') {

@@ -1,10 +1,9 @@
 # Ignore temporary scratch/development analysis scripts
 scratch/
 
-# Ignore documentation, legacy code, and debug tests
-docs/
+# Ignore legacy folders and LaTeX build artifacts
 legacy/
-Testes/
+*.aux
 
 # Ignore course materials and modeling PDF analysis
 Controle_Preditivo_Material/
