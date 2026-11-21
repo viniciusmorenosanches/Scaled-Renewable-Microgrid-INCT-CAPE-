@@ -296,11 +296,16 @@ function [u_sol, J] = solver_cecilia(x_prev, u_prev, xref, d, mpc)
     %   d      — Perturbações renováveis [Pot_wt; Pot_pv] em Watts
     %   mpc    — Estrutura de dados com matrizes do sistema e restrições
     %
-    % Saída:
+    % Saída obrigatória:
     %   u_sol  — Vetor de 4 comandos normalizados [Pc; Pd; uel; ucc] em [0, 1]
     %   J      — Custo da função objetivo (opcional)
 
-    % --- Exemplo / Fallback provisório: repassa o solver oficial enquanto ---
-    % --- a Cecília insere seu próprio solver aqui                         ---
-    [u_sol, J, ~] = mpc_solve([], x_prev, u_prev, xref, d, mpc, [], [], []);
+    % =====================================================================
+    %  COLE SEU ALGORITMO AQUI (Cecília):
+    % =====================================================================
+    % Exemplo:
+    %   u_sol = seu_algoritmo(x_prev, xref, d, mpc);
+    %   J     = 0;
+    
+    error("Cecília: insira seu algoritmo aqui dentro da função solver_cecilia() antes de rodar com SOLVER_CHOICE = 'cecilia'!");
 end
