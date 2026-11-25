@@ -65,10 +65,10 @@ Diferente do painel solar, as flutuações aerodinâmicas e mecânicas da turbin
 *   **`RUIDO_MEDICAO_R = 0.3`**: Variância estimada do ruído de leitura do ADC ($K \approx 0.35$).
 *   **Diagnóstico (`Y_raw` no debug serial):** Como o filtro de Kalman retém ~65% da predição do modelo, mesmo se o fio do sensor no pino `A3` desconectar (`Y_raw = 0.00 V`), o observador ainda gera uma saída estimada proporcional ao comando (`Yf ≈ 0.30 · U`, chegando a `~1.49 V` em `U = 5.0 V`). Sempre monitore `Y_raw` no Monitor Serial para confirmar que a leitura física está chegando em `A3`.
 
-### Calibração de Potência Eólica (Dois Regimes)
-A equação física aerodinâmica é $P_{fisica} = 0.5 \cdot \rho_{ar} \cdot \pi \cdot r^2 \cdot C_p \cdot Y_f^3 = 0.01515 \cdot Y_f^3$.
-*   **Regime A — Observador de Kalman (`Y_raw ≈ 0 V`, $Y_f \in [0,\; 1.50\text{ V}]$):** Com **`ESCALA_TEMPORARIA_POTENCIA = 4900.0`** e **`OFFSET_TEMPORARIO_POTENCIA_W = 0.0`**, o pico $Y_f = 1.50\text{ V}$ ($0.051\text{ W}$ físicos) é mapeado para $0\text{--}250\text{ W}$.
-*   **Regime B — Sensor Físico Conectado em `A3` ($Y_{raw} \in [2.0,\; 4.5\text{ V}]$):** Quando o divisor resistivo real ($43\text{k}/10\text{k}$) estiver entregando de $2\text{ V}$ a $5\text{ V}$ no pino `A3`, reduza a escala (ex.: `ESCALA = 50.0, OFFSET = 150.0` ou `ESCALA = 120.0, OFFSET = 0.0`) para não saturar a potência acima da faixa da microrrede.
+### Calibração de Potência Eólica (`SENSOR_FISICO_ATIVO`)
+A equação física aerodinâmica é $P_{fisica} = 0.5 \cdot \rho_{ar} \cdot \pi \cdot r^2 \cdot C_p \cdot Y_f^3 = 0.01515 \cdot Y_f^3$. O arquivo único `referenciaVento.csv` fornece a curva ideal na faixa de **$2.00\text{ V}$ a $4.52\text{ V}$** (sem `+2V` nem `+150W`), e uma chave no firmware seleciona o modo de operação:
+*   **`SENSOR_FISICO_ATIVO = true` (Padrão — Sensor em `A3` funcionando, $Y_{raw} \in [2.00,\; 4.52\text{ V}]$):** Usa a referência do CSV diretamente com **`ESCALA_SENSOR_REAL = 200.0`** e **`OFFSET = 0.0`**, mapeando $2.00\text{ V} \to \approx 24\text{ W}$ e $4.52\text{ V} \to \approx 280\text{ W}$ (média $\approx 150\text{ W}$).
+*   **`SENSOR_FISICO_ATIVO = false` (Contingência — Sem sensor físico / apenas Kalman):** Divide automaticamente a referência do CSV por `3.0f` ($2.00\dots 4.52\text{ V} \to 0.67\dots 1.51\text{ V}$) e usa **`ESCALA_KALMAN_SEM_SENSOR = 5400.0`** ($200 \times 3^3$) com `OFFSET = 0.0`, preservando exatamente a mesma curva de $\approx 24\text{--}280\text{ W}$ com o mesmo CSV.
 
 ### Controle do Motor (ESC), Anti-Windup Direcional e Rampa de Partida
 *   **`GANHO_ESC_POR_VOLT = 38.0`**: Converte a tensão de controle teórica em comando angular da biblioteca `Servo` para regular o ESC da turbina.

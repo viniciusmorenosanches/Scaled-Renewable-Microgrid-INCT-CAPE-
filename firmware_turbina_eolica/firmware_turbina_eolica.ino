@@ -75,22 +75,22 @@ const float GANHO_DIVISOR_TENSAO = 43.0f / 10.0f;  // 4.3 [adimensional]
 const float GANHO_ESC_POR_VOLT = 38.0f;
 
 // ---------------------------------------------------------------------------
-// Escala de potencia da turbina eolica — DOIS REGIMES DE CALIBRACAO
+// Modo do sensor de tensao da turbina (pino A3) e escala de potencia
 //
-// Regime A (Observador de Kalman sem sensor / A3 ~ 0V -> Yf in [0 .. 1.50V]):
-//   Quando o divisor de tensao no pino A3 esta desconectado ou lendo ~0V,
-//   o filtro de Kalman estima Yf pela predicao do modelo (Yf ~ 0.30 * U),
-//   atingindo ~1.49V quando U = 5.00V (potencia aerodinamica fisica ~ 0.051 W).
-//   Com ESCALA = 4900.0f e OFFSET = 0.0f, mapeia 0..1.50V -> 0..250 W.
+// SENSOR_FISICO_ATIVO = true (PADRAO — sensor no A3 funcionando):
+//   Usa a referencia do CSV diretamente (2.00V .. 4.52V) e ESCALA = 200.0f.
+//   Mapeia 2.00V -> ~24 W e 4.52V -> ~280 W (sem offset artificial).
 //
-// Regime B (Sensor fisico reconectado no A3 -> Y_raw = 2.0 .. 4.5V):
-//   Se o divisor resistivo (43k/10k) for reconectado ao A3 e entregar a
-//   tensao real do gerador (~2.0V a 4.5V), REDUZIR a escala para nao saturar
-//   em milhares de Watts (ex: ESCALA = 50.0f com OFFSET = 150.0f como nos
-//   ensaios originais, ou ESCALA = 120.0f com OFFSET = 0.0f para 0..250W).
+// SENSOR_FISICO_ATIVO = false (CONTINGENCIA — sem sensor, so Kalman):
+//   Divide a referencia recebida por 3.0f (2.00..4.52V -> 0.67..1.51V) e usa
+//   ESCALA = 5400.0f (200 * 3^3), mantendo exatamente a mesma curva de 24..280 W
+//   com o mesmo arquivo referenciaVento.csv!
 // ---------------------------------------------------------------------------
 
-const float ESCALA_TEMPORARIA_POTENCIA   = 4900.0f; // [adimensional]
+const bool  SENSOR_FISICO_ATIVO          = true;    // true = sensor A3 OK; false = fallback so Kalman
+const float ESCALA_SENSOR_REAL           = 200.0f;  // [adimensional] para Yf em 2.0..4.5V
+const float ESCALA_KALMAN_SEM_SENSOR     = 5400.0f; // [adimensional] 200 * 3^3 para Yf em 0.67..1.5V
+const float ESCALA_TEMPORARIA_POTENCIA   = SENSOR_FISICO_ATIVO ? ESCALA_SENSOR_REAL : ESCALA_KALMAN_SEM_SENSOR;
 const float OFFSET_TEMPORARIO_POTENCIA_W = 0.0f;    // [W]
 
 // ---------------------------------------------------------------------------
@@ -483,6 +483,9 @@ void loop() {
     ultimoControle_ms = agora_ms;
 
     float referenciaLocal_V = lerReferenciaAtomica();
+    if (!SENSOR_FISICO_ATIVO) {
+        referenciaLocal_V /= 3.0f;
+    }
 
     // Re-dispara a rampa de partida suave do ESC sempre que o comando sai de zero
     static float refAnterior_V = 0.0f;
